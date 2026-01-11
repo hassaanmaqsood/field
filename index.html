@@ -1,30 +1,128 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Parametric Design with ThreeJS</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Field Studio</title>
+  <link rel="shortcut icon" href="./images/field.svg" type="image/svg">
+  <meta name="description"
+    content="Field Studio - A browser-based CAD environment that makes field theory accessible. No installation, no learning curve, just pure design freedom.">
+  <meta name="author" content="Hassaan Maqsood">
+  <meta name="theme-color" content="#000000">
+  
+  <meta property="og:title" content="Field Studio">
+  <meta property="og:description"
+    content="Field Studio - A browser-based CAD environment that makes field theory accessible. No installation, no learning curve, just pure design freedom.">
+  <meta property="og:image" content="./images/field_cover.png">
+  <meta property="og:url" content="https://hassaanmaqsood.github.io/field/">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Field Studio">
+  <meta name="twitter:description"
+    content="Field Studio - A browser-based CAD environment that makes field theory accessible. No installation, no learning curve, just pure design freedom.">
+  <meta name="twitter:image" content="./images/field_cover.png">
+
+  <!-- CodeMirror CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/material-darker.min.css">
+  <link rel="stylesheet" href="./styles/style.css">
+
   <script type="importmap">
-      {
-        "imports": {
-          "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
-          "three/addons/": "https://unpkg.com/three@0.159.0/examples/jsm/",
-          "marked": "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js"
-        }
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.159.0/examples/jsm/",
+        "field": "./field.js"
       }
+    }
   </script>
 
-  <link href='./style.css' rel='stylesheet'>
-  <script defer type="module" src="./main.js" ></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+
+
+  <script defer type="module" src="./scripts/main.js"></script>
 </head>
+
 <body>
-  
-  <header>Parametric Design with ThreeJS</header>
 
-  <nav></nav>
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <img src="./field.svg" alt="" srcset="">
+      <span>Field Studio v0.3</span>
+    </div>
+    <div class="header-actions">
+      <button class="btn" id="clearBtn">clear</button>
+      <button class="btn" id="exportBtn">export</button>
+      <button class="btn-primary" id="runBtn">run</button>
+    </div>
+  </div>
 
-  <div id="threejs"></div>
+  <!-- Main Container -->
+  <div class="main-container">
 
-  
+    <!-- Code Panel -->
+    <div class="code-panel" id="codePanel">
+      <div class="panel-header">
+        <div class="panel-title">editor</div>
+        <div class="panel-controls">
+          <button class="icon-btn" title="Format Code">⌘</button>
+          <button class="icon-btn" title="Settings">⚙</button>
+        </div>
+      </div>
+      <div class="code-editor" id="codeEditor"></div>
+    </div>
+
+    <!-- Resizer -->
+    <div class="resizer" id="resizer"></div>
+
+    <!-- Viewer Panel -->
+    <div class="viewer-panel">
+      <div class="panel-header">
+        <div class="panel-title">viewport</div>
+        <div class="panel-controls">
+          <button class="icon-btn" id="resetCameraBtn" title="Reset Camera">◎</button>
+          <button class="icon-btn" id="toggleGridBtn" title="Toggle Grid">⊞</button>
+          <button class="icon-btn" id="toggleWireframeBtn" title="Toggle Wireframe">◫</button>
+        </div>
+      </div>
+      <div class="viewer-canvas">
+        <div class="grid-bg"></div>
+        <canvas id="three-canvas"></canvas>
+        <div class="viewer-controls">
+          <div class="control-btn" id="zoomInBtn" title="Zoom In">+</div>
+          <div class="control-btn" id="zoomOutBtn" title="Zoom Out">−</div>
+          <div class="control-btn" id="resetViewBtn" title="Reset View">⟲</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Status Bar -->
+  <div class="status-bar">
+    <div class="status-left">
+      <div class="status-item">
+        <div class="status-indicator active"></div>
+        <span>ready</span>
+      </div>
+      <div class="status-item">
+        <span id="statusText">ln 1, col 1</span>
+      </div>
+    </div>
+    <div class="status-right">
+      <div class="status-item">
+        <span id="triangleCount">0 triangles</span>
+      </div>
+      <div class="status-item">
+        <span>javascript</span>
+      </div>
+    </div>
+  </div>
+
+
 </body>
+
 </html>
