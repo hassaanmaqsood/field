@@ -1,10 +1,9 @@
 /**
- * Field-Native CAD Module - FULLY FIXED VERSION
+ * Field-Native Computational Engineering
  * Vanilla JavaScript implementation for browser-based parametric 3D modeling
  * 
  * 
- * @version 3.0.0
- * @license MIT
+ * @version 0.3.0
  */
 
 // ============================================================================
