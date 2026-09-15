@@ -8,7 +8,7 @@ import os
 #   2. In Python: field_runtime.set_viewer_url("https://...")
 DEFAULT_VIEWER_URL = os.environ.get(
     "FIELD_RUNTIME_URL",
-    "https://hassaan.github.io/field/"
+    "https://hassaanmaqsood.github.io/field/"
 )
 
 _viewer_url: str = DEFAULT_VIEWER_URL
