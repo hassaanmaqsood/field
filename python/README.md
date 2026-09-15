@@ -10,10 +10,10 @@ In a Google Colab notebook cell:
 
 ```python
 # 1. Install directly from GitHub repository
-!pip install "git+https://github.com/hassaan/field-mvp.git#subdirectory=python"
+!pip install "git+https://github.com/hassaanmaqsood/field.git#subdirectory=python"
 
 # 2. Import and visualize
-from field_runtime import Field
+from field import Field
 
 # Create a field with differential operators and display it
 f = Field.preset("radial").gradient()
@@ -55,7 +55,14 @@ f = Field.expr("sin(x) * cos(y) - 0.3 * z", domain={"x": (-5, 5), "y": (-5, 5), 
 v = Field.vector("[-y, x, 0.2 * z]")
 ```
 
-### 3. Differential Operators
+### 3. Custom Discrete Fields (Baked Grids)
+You can instantiate a discrete field by "baking" an analytic expression onto a voxel grid. This simulates passing a 3D array of discrete data (e.g., from numpy).
+```python
+# Create a discrete representation of a field by baking it to a 64x64x64 grid
+discrete_field = Field.preset("radial").bake(res=64)
+```
+
+### 4. Differential Operators
 Apply coordinate-free differential operators:
 ```python
 # Gradient ∇f (yields vector field)
@@ -93,7 +100,19 @@ f.sample(
 )
 ```
 
-### 6. Exporting to Standalone HTML
+### 6. Plotting Multiple Fields
+You can combine and plot multiple independent fields in the same view:
+```python
+import field_runtime as fr
+
+f1 = fr.Field.preset("radial").view.iso(level=0.5, color="#1D4ED8")
+f2 = fr.Field.preset("saddle").view.iso(level=0.0, color="#EF4444")
+
+# Renders both fields overlaid in the same interactive viewer
+fr.show(f1, f2)
+```
+
+### 7. Exporting to Standalone HTML
 ```python
 # Save standalone shareable HTML file
 f.save_html("my_field.html")

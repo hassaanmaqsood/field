@@ -71,8 +71,8 @@ export function slice(self: Field, fixed: FixedAxis[]): Field {
 export function pan(self: Field, offset: Point): Field {
   const m = self.rankIn();
   if (offset.length !== m) throw new Error('pan: offset length must match rankIn()');
-  const domain = self.domain().map((b, i) => ({ min: b.min - offset[i], max: b.max - offset[i] }));
-  const phi = (p: Point): Point => p.map((v, i) => v + offset[i]);
+  const domain = self.domain();
+  const phi = (p: Point): Point => p.map((v, i) => v - offset[i]);
   return precompose(self, phi, domain, m, 'op:pan', { offset });
 }
 

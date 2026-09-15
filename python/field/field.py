@@ -14,13 +14,19 @@ class ViewBuilder:
 
     def iso(
         self,
-        level: float = 0.0,
+        level: Optional[float] = None,
         color: str = "#1D4ED8",
         opacity: float = 0.9,
     ) -> "Field":
         """Add a raymarched isosurface layer f(x,y,z) = level."""
+        actual_level = 0.0
+        if level is not None:
+            actual_level = level
+        elif self._field._field_spec.get("rankOut") == "[3]":
+            actual_level = 1.0
+            
         self._field._view_layers.append(
-            f"iso {{ level: {level}  color: {color}  opacity: {opacity} }}"
+            f"iso {{ level: {actual_level}  color: {color}  opacity: {opacity} }}"
         )
         return self._field
 
@@ -203,6 +209,11 @@ class Field:
     def slice(self, axis: str = "z", value: float = 0.0) -> "Field":
         """Slice field along axis to 2D hyperplane."""
         self._ops_list.append(f"slice {{ axis: {axis}  value: {value} }}")
+        return self
+
+    def pan(self, offset_x: float = 0.0, offset_y: float = 0.0, offset_z: float = 0.0) -> "Field":
+        """Pan field spatially by a given offset vector."""
+        self._ops_list.append(f"pan {{ offset: [{offset_x}, {offset_y}, {offset_z}] }}")
         return self
 
     def bake(self, res: int = 24) -> "Field":

@@ -186,7 +186,13 @@ sample {
         </section>
 
         <section class="guide-section">
-          <h3>3. Dual Controllers & Jog Pads</h3>
+          <h3>3. Custom Vectors & Discrete Fields</h3>
+          <p><strong>Vector Fields:</strong> Use bracket notation in the <code>expr</code> field to define 3D vectors: <code>expr: [sin(y), cos(x), 0.5*z]</code>.</p>
+          <p><strong>Discrete Fields (Grids):</strong> You can bake an analytic function into a discrete voxel grid to simulate numpy/CSV arrays by adding the bake operator: <code>ops { bake { res: 64 } }</code>.</p>
+        </section>
+
+        <section class="guide-section">
+          <h3>4. Dual Controllers & Jog Pads</h3>
           <ul class="guide-list">
             <li><strong>Left Pad (BOX - Amber):</strong> Controls the sampling domain box. Drag disk for XY planar translation, drag vertical slider for Z-axis shift. Double-tap to reset box position.</li>
             <li><strong>Right Pad (CAM - Blue):</strong> Controls camera viewpoint. Drag disk to orbit azimuth and elevation, drag vertical slider to zoom/dolly. Double-tap to reset view.</li>
@@ -196,7 +202,7 @@ sample {
         </section>
 
         <section class="guide-section">
-          <h3>4. Code Editor & Shortcuts</h3>
+          <h3>5. Code Editor & Shortcuts</h3>
           <ul class="guide-list">
             <li><kbd>Ctrl</kbd> + <kbd>Enter</kbd> or <kbd>Cmd</kbd> + <kbd>Enter</kbd>: Immediately evaluate & render field.</li>
             <li><kbd>Ctrl</kbd> + <kbd>Space</kbd>: Trigger syntax autocompletion popup.</li>

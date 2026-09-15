@@ -44,10 +44,14 @@ export interface SampleDef {
   res: number;
 }
 
-export interface ParsedConfig {
+export interface FieldPipeline {
   field: FieldDef;
   ops: OpStep[];
   view: ViewLayer[];
+}
+
+export interface ParsedConfig {
+  pipelines: FieldPipeline[];
   sample: SampleDef;
 }
 
@@ -64,16 +68,24 @@ function stripComments(s: string): string {
 }
 
 function extractBlock(s: string, name: string): string | null {
-  const re = new RegExp('(?:^|\\s)' + name + '\\s*\\{', 'm');
-  const match = re.exec(s);
-  if (!match) return null;
-  const braceStart = s.indexOf('{', match.index + match[0].length - 1);
-  let depth = 0;
-  for (let i = braceStart; i < s.length; i++) {
-    if (s[i] === '{') depth++;
-    else if (s[i] === '}') { depth--; if (depth === 0) return s.slice(braceStart + 1, i).trim(); }
+  const re = new RegExp('(?:^|\\s)' + name + '\\s*\\{', 'gm');
+  let match;
+  let blocks: string[] = [];
+  while ((match = re.exec(s)) !== null) {
+    const braceStart = s.indexOf('{', match.index + match[0].length - 1);
+    let depth = 0;
+    for (let i = braceStart; i < s.length; i++) {
+      if (s[i] === '{') depth++;
+      else if (s[i] === '}') { 
+        depth--; 
+        if (depth === 0) {
+          blocks.push(s.slice(braceStart + 1, i).trim());
+          break;
+        }
+      }
+    }
   }
-  return null;
+  return blocks.length > 0 ? blocks.join('\n') : null;
 }
 
 function parseDomainSpec(spec: string): Bounds[] {
@@ -93,10 +105,10 @@ function parseInlineKV(inner: string): Record<string, string> {
     result['expr'] = exprMatch[1].trim();
     inner = inner.slice(0, exprMatch.index) + inner.slice(exprMatch.index + exprMatch[0].length);
   }
-  const kvRe = /(\w+)\s*:\s*([^\s\n]+)/g;
+  const kvRe = /(\w+)\s*:\s*(.*?)(?=\s+\w+\s*:|$)/gs;
   let kv;
   while ((kv = kvRe.exec(inner)) !== null) {
-    result[kv[1]] = kv[2];
+    result[kv[1]] = kv[2].trim();
   }
   return result;
 }
@@ -214,12 +226,42 @@ sample {
   res: 48
 }`;
 
+
+
 export function parseConfig(source: string): ParsedConfig {
   const clean = stripComments(source);
+  
+  const pipelines: FieldPipeline[] = [];
+  const fieldRegex = /(?:^|\s)field\s*\{/gm;
+  const indices: number[] = [];
+  
+  let match;
+  while ((match = fieldRegex.exec(clean)) !== null) {
+    indices.push(match.index);
+  }
+  
+  if (indices.length === 0) {
+    // Fallback: parse as single implicitly
+    pipelines.push({
+      field: parseFieldBlock(extractBlock(clean, 'field') ?? ''),
+      ops: parseOpsBlock(extractBlock(clean, 'ops') ?? ''),
+      view: parseViewBlock(extractBlock(clean, 'view') ?? '')
+    });
+  } else {
+    for (let i = 0; i < indices.length; i++) {
+      const start = indices[i];
+      const end = i + 1 < indices.length ? indices[i + 1] : clean.length;
+      const segment = clean.slice(start, end);
+      pipelines.push({
+        field: parseFieldBlock(extractBlock(segment, 'field') ?? ''),
+        ops: parseOpsBlock(extractBlock(segment, 'ops') ?? ''),
+        view: parseViewBlock(extractBlock(segment, 'view') ?? '')
+      });
+    }
+  }
+
   return {
-    field:  parseFieldBlock(extractBlock(clean, 'field')  ?? ''),
-    ops:    parseOpsBlock(extractBlock(clean, 'ops')    ?? ''),
-    view:   parseViewBlock(extractBlock(clean, 'view')   ?? ''),
+    pipelines,
     sample: parseSampleBlock(extractBlock(clean, 'sample') ?? ''),
   };
 }

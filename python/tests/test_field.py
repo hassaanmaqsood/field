@@ -1,12 +1,13 @@
-"""Unit tests for field_runtime Python module."""
+"""Unit tests for field Python module."""
 
 import unittest
-from field_runtime import Field, FieldViewer, set_viewer_url, get_viewer_url
+
+from field import Field, FieldViewer, set_viewer_url, get_viewer_url
 
 
-class TestFieldRuntime(unittest.TestCase):
+class TestField(unittest.TestCase):
     def setUp(self):
-        set_viewer_url("https://hassaan.github.io/field-mvp/")
+        set_viewer_url("https://hassaanmaqsood.github.io/field/")
 
     def test_preset_generation(self):
         f = Field.preset("radial", domain={"x": (-3, 3), "y": (-3, 3), "z": (-3, 3)})
@@ -45,7 +46,7 @@ class TestFieldRuntime(unittest.TestCase):
     def test_viewer_url_generation(self):
         f = Field.preset("vortex")
         url = f.to_url(hide_inspector=True, hide_pads=True)
-        self.assertTrue(url.startswith("https://hassaan.github.io/field-mvp/?"))
+        self.assertTrue(url.startswith("https://hassaanmaqsood.github.io/field/?"))
         self.assertIn("code=", url)
         self.assertIn("hideInspector=true", url)
         self.assertIn("hidePads=true", url)

@@ -38,10 +38,18 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
 
   // Ground grid — subtle warm lines
   const grid = new THREE.GridHelper(20, 20, 0xC8C0B4, 0xDDD8D0);
+  if (grid.material && !Array.isArray(grid.material)) {
+    grid.material.transparent = true;
+    grid.material.opacity = 0.3;
+  }
   scene.add(grid);
 
   // Axes helper — small, unobtrusive
   const axes = new THREE.AxesHelper(1);
+  if (axes.material && !Array.isArray(axes.material)) {
+    axes.material.transparent = true;
+    axes.material.opacity = 0.3;
+  }
   scene.add(axes);
 
   // Field representations group
@@ -52,7 +60,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
   const BOX_COLOR = 0xB45309; // amber
   let boxWireGeom = new THREE.BoxGeometry(8, 8, 8);
   let boxEdges = new THREE.EdgesGeometry(boxWireGeom);
-  const boxMat = new THREE.LineBasicMaterial({ color: BOX_COLOR, linewidth: 1.5 });
+  const boxMat = new THREE.LineBasicMaterial({ color: BOX_COLOR, transparent: true, opacity: 0.25 });
   const boxWire = new THREE.LineSegments(boxEdges, boxMat);
   scene.add(boxWire);
 

@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "field-runtime"
+name = "field"
 version = "0.1.0"
 description = "Interactive 3D Field Mathematics Runtime for Jupyter & Google Colab"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
-    { name = "Field Runtime Team" }
+    { name = "Hassaan Maqsood" }
 ]
 keywords = [
     "field-theory",
@@ -42,4 +42,4 @@ jupyter = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["field_runtime*"]
+include = ["field*"]

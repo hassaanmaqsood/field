@@ -23,8 +23,8 @@ An interactive 3D Field Mathematics Runtime and Visualizer with unified continuo
 
 ```bash
 # Clone the repository
-git clone https://github.com/field-runtime/field-runtime.git
-cd field-runtime
+git clone https://github.com/hassaanmaqsood/field.git
+cd field
 
 # Install dependencies and start development server
 npm install
@@ -52,17 +52,49 @@ pytest python/tests
 Install directly from GitHub in any notebook cell:
 
 ```python
-!pip install "git+https://github.com/field-runtime/field-runtime.git#subdirectory=python"
+!pip install "git+https://github.com/hassaanmaqsood/field.git#subdirectory=python"
 ```
 
 ```python
-from field_runtime import Field
+from field import Field
 
 # Define an analytic field and compute its vector gradient
 f = Field.preset("radial").gradient()
 
 # In Jupyter / Colab, evaluating the field automatically embeds the interactive 3D viewer:
 f
+```
+
+### 4. Custom Vector Expressions & Discrete Fields
+
+You can construct arbitrary scalar and vector expressions:
+
+```python
+# Custom scalar field
+f_scalar = Field.expr("sin(x) * cos(y)")
+
+# Custom vector field (requires array brackets)
+f_vector = Field.vector("[sin(y), cos(x), 0.5*z]")
+```
+
+To create and use **discrete fields** (such as voxel grids of data), you can bake any analytic expression into a discrete sampled grid to simulate passing numpy/CSV arrays:
+
+```python
+# Creates a 64x64x64 discrete voxel grid representation
+f_discrete = Field.expr("x^2 + y^2").bake(res=64)
+```
+
+### 5. Plotting Multiple Fields
+
+You can plot multiple fields simultaneously in the same viewer:
+
+```python
+import field_runtime as fr
+
+f1 = fr.Field.preset("radial").view.iso(level=0.5, color="#1D4ED8")
+f2 = fr.Field.preset("saddle").view.iso(level=0.0, color="#EF4444")
+
+fr.show(f1, f2)
 ```
 
 ---

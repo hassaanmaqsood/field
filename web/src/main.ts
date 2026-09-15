@@ -15,11 +15,11 @@ import { AnalyticField } from './backends/AnalyticField';
 import { gradient, divergence, curl, laplacian } from './algebra/differential';
 import { add, subtract, dot } from './algebra/arithmetic';
 import { min as fMin, max as fMax, smoothMin } from './algebra/boolean';
-import { slice } from './algebra/slicing';
+import { slice, pan } from './algebra/slicing';
 import { bake, fit } from './algebra/bakeFit';
 import { vonMisesStress } from './plugins/mechanical';
 import { GridField } from './backends/GridField';
-import { parseConfig, DEFAULT_CODE, ParsedConfig, ViewLayer } from './ui/parser';
+import { parseConfig, DEFAULT_CODE, ParsedConfig, ViewLayer, FieldPipeline } from './ui/parser';
 import { JogPad } from './ui/jog-pad';
 import { createFieldEditor, FieldEditorHandle } from './ui/field-editor';
 
@@ -67,12 +67,12 @@ const stripRightEl      = document.getElementById('strip-right')       as HTMLCa
 const { scene, camera, renderer, controls, fieldGroup, updateBoxWire } = createScene(canvas);
 
 // ── App state ──────────────────────────────────────────────────────────────
-let displayField: Field | null = null;
-let isoHandle: IsosurfaceHandle | null = null;
-let probeVolume: THREE.Mesh | null = null;
+let displayFields: Field[] = [];
+let isoHandles: IsosurfaceHandle[] = [];
+let probeVolumes: THREE.Mesh[] = [];
 
-// Box offset applied via jog pad (world-space XYZ shift on fieldGroup)
-let boxOffset = new THREE.Vector3();
+// Total algebraic offset baked into the field
+let algebraicOffset = new THREE.Vector3();
 
 // Canvas drag target: 'cam' or 'box'
 let dragTarget: 'cam' | 'box' = 'cam';
@@ -119,7 +119,7 @@ function updateTypeBadge(field: Field) {
 }
 
 // ── Field construction from config ────────────────────────────────────────
-function buildField(config: ParsedConfig): Field {
+function buildField(config: FieldPipeline): Field {
   const fd = config.field;
 
   // Source field
@@ -202,13 +202,14 @@ function clearFieldGroup() {
     (child as any).geometry?.dispose?.();
     (child as any).material?.dispose?.();
   }
-  isoHandle?.dispose();
-  isoHandle = null;
-  probeVolume = null;
+  for (const h of isoHandles) h.dispose();
+  isoHandles = [];
+  probeVolumes = [];
+  displayFields = [];
 }
 
 // ── Render layers ─────────────────────────────────────────────────────────
-function renderLayer(field: Field, layer: ViewLayer, box: { min: number; max: number }[]) {
+function renderLayer(field: Field, layer: ViewLayer, box: { min: number; max: number }[], sampleRes: number) {
   const boxBounds = box.length >= 3 ? box.slice(0, 3) : [
     { min:-4,max:4 }, { min:-4,max:4 }, { min:-4,max:4 }
   ];
@@ -216,24 +217,35 @@ function renderLayer(field: Field, layer: ViewLayer, box: { min: number; max: nu
   switch (layer.kind) {
     case 'iso': {
       const color = new THREE.Color(layer.color ?? '#2563eb');
-      const res = Math.min(64, Math.max(16, (layer as any).res ?? 48));
-      isoHandle = buildIsosurface(field, res, color);
-      isoHandle.setIso(layer.level ?? 0);
-      fieldGroup.add(isoHandle.mesh);
+      const res = (layer as any).res ?? sampleRes ?? 48;
+      const handle = buildIsosurface(field, res, color);
+      
+      let defaultLevel = 0;
+      if (shapeLabel(field.rankOut()) === 'vector') {
+        defaultLevel = 1.0;
+      }
+      handle.setIso(layer.level ?? defaultLevel);
+      
+      fieldGroup.add(handle.mesh);
+      isoHandles.push(handle);
       break;
     }
     case 'glyphs': {
       const label = shapeLabel(field.rankOut());
-      const count = layer.count ?? 7;
-      if (label === 'vector') fieldGroup.add(buildVectorGlyphs(field, count));
-      else if (label === 'tensor') fieldGroup.add(buildTensorGlyphs(field, count));
+      const count = layer.count ?? sampleRes ?? 7;
+      const targetField = label === 'scalar' ? gradient(field) : field;
+      
+      if (label === 'vector' || label === 'scalar') fieldGroup.add(buildVectorGlyphs(targetField, count));
+      else if (label === 'tensor') fieldGroup.add(buildTensorGlyphs(targetField, count));
       break;
     }
     case 'streamlines': {
       const label = shapeLabel(field.rankOut());
-      if (label === 'vector') {
+      const targetField = label === 'scalar' ? gradient(field) : field;
+      
+      if (label === 'vector' || label === 'scalar') {
         const obj = buildStreamlines(
-          field,
+          targetField,
           layer.seeds ?? 48,
           layer.steps ?? 150,
           layer.tube  ?? 0,
@@ -344,39 +356,53 @@ async function runPipeline(source: string) {
     return;
   }
 
-  let field: Field;
-  try {
-    field = buildField(config);
-  } catch (e) {
-    setError(`Field error: ${(e as Error).message}`);
-    runBtn.disabled = false;
-    return;
-  }
-
-  displayField = field;
-  updateTypeBadge(field);
   clearFieldGroup();
   updateBoxWire(config.sample.box);
-
   setStatus('busy', 'Building layers…');
 
   try {
-    // Render each view layer
-    if (config.view.length === 0) {
-      // Default: isosurface
-      isoHandle = buildIsosurface(field, config.sample.res);
-      isoHandle.setIso(0);
-      fieldGroup.add(isoHandle.mesh);
-    } else {
-      for (const layer of config.view) {
-        renderLayer(field, layer, config.sample.box);
+    for (const pipeline of config.pipelines) {
+      let field: Field;
+      try {
+        field = buildField(pipeline);
+        if (algebraicOffset.lengthSq() > 0) {
+          field = pan(field, [algebraicOffset.x, algebraicOffset.y, algebraicOffset.z]);
+        }
+      } catch (e) {
+        setError(`Field error: ${(e as Error).message}`);
+        runBtn.disabled = false;
+        return;
       }
-    }
 
-    // Probe volume (invisible raycast target)
-    probeVolume = buildProbeVolume(field);
-    probeVolume.visible = false;
-    fieldGroup.add(probeVolume);
+      displayFields.push(field);
+
+      // Render each view layer
+      if (pipeline.view.length === 0) {
+        // Default: isosurface
+        const handle = buildIsosurface(field, config.sample.res);
+        handle.setIso(0);
+        fieldGroup.add(handle.mesh);
+        isoHandles.push(handle);
+      } else {
+        for (const layer of pipeline.view) {
+          renderLayer(field, layer, config.sample.box, config.sample.res);
+        }
+      }
+
+      // Probe volume (invisible raycast target)
+      const vol = buildProbeVolume(field);
+      vol.visible = false;
+      fieldGroup.add(vol);
+      probeVolumes.push(vol);
+    }
+    
+    // Update badge using the first field if available
+    if (displayFields.length > 0) {
+      updateTypeBadge(displayFields[0]);
+    } else {
+      typeBadge.textContent = 'No field';
+      barType.textContent = 'No field';
+    }
 
     setStatus('ready', 'Ready');
   } catch (e) {
@@ -523,6 +549,25 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+let isRendering = false;
+let renderPending = false;
+
+function requestRealtimeRun() {
+  if (isRendering) {
+    renderPending = true;
+    return;
+  }
+  isRendering = true;
+  requestAnimationFrame(async () => {
+    await runPipeline(editorHandle.getValue());
+    isRendering = false;
+    if (renderPending) {
+      renderPending = false;
+      requestRealtimeRun();
+    }
+  });
+}
+
 // ── Box drag on canvas (when dragTarget === 'box') ────────────────────────
 {
   let dragging = false;
@@ -543,15 +588,15 @@ window.addEventListener('keydown', (e) => {
     lastX = e.clientX;
     lastY = e.clientY;
 
-    // Translate fieldGroup in camera-space XY
     const right   = new THREE.Vector3();
     const up      = new THREE.Vector3();
     const forward = new THREE.Vector3();
     camera.matrix.extractBasis(right, up, forward);
 
     const scale = 20;
-    fieldGroup.position.addScaledVector(right, dx * scale);
-    fieldGroup.position.addScaledVector(up,   -dy * scale);
+    algebraicOffset.addScaledVector(right, dx * scale);
+    algebraicOffset.addScaledVector(up,   -dy * scale);
+    requestRealtimeRun();
   });
 
   canvas.addEventListener('pointerup', () => { dragging = false; });
@@ -564,14 +609,14 @@ const pointer   = new THREE.Vector2();
 
 canvas.addEventListener('click', (ev) => {
   if (dragTarget === 'box') return; // skip probe in box-drag mode
-  if (!probeVolume || !displayField) return;
+  if (probeVolumes.length === 0 || displayFields.length === 0) return;
 
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((ev.clientX - rect.left) / rect.width)  * 2 - 1;
   pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
 
-  const result = probe(displayField, probeVolume, raycaster);
+  const result = probe(displayFields[0], probeVolumes[0], raycaster);
   if (!result) {
     probeValue.textContent = '— click on the field to sample —';
     return;
@@ -590,14 +635,17 @@ const padBox = new JogPad(diskLeftEl, stripLeftEl, '#B45309', 'BOX', {
     const up    = new THREE.Vector3();
     camera.matrix.extractBasis(right, up, new THREE.Vector3());
     const speed = 0.06;
-    fieldGroup.position.addScaledVector(right,  x * speed);
-    fieldGroup.position.addScaledVector(up,    -y * speed);
+    algebraicOffset.addScaledVector(right,  x * speed);
+    algebraicOffset.addScaledVector(up,    -y * speed);
+    requestRealtimeRun();
   },
   onZ: (z) => {
-    fieldGroup.position.z += z * 0.06;
+    algebraicOffset.z += z * 0.06;
+    requestRealtimeRun();
   },
   onReset: () => {
-    fieldGroup.position.set(0, 0, 0);
+    algebraicOffset.set(0, 0, 0);
+    requestRealtimeRun();
   },
 });
 

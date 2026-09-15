@@ -12,9 +12,20 @@ from .field import Field
 from .viewer import FieldViewer
 
 __version__ = "0.1.0"
+
+def show(*fields: "Field", **kwargs) -> None:
+    """Explicitly display multiple fields simultaneously in the interactive viewer."""
+    if not fields:
+        return
+    
+    combined_code = "\n\n".join(f.to_dsl() for f in fields)
+    viewer = FieldViewer(combined_code)
+    viewer.show(**kwargs)
+
 __all__ = [
     "Field",
     "FieldViewer",
+    "show",
     "get_viewer_url",
     "set_viewer_url",
 ]

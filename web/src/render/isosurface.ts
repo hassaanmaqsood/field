@@ -119,7 +119,15 @@ export function buildIsosurface(
       const y = dy.min + (yi / (resolution - 1)) * (dy.max - dy.min);
       for (let xi = 0; xi < resolution; xi++) {
         const x = dx.min + (xi / (resolution - 1)) * (dx.max - dx.min);
-        data[i++] = asScalar(baked.at([x, y, z]));
+        const val = baked.at([x, y, z]);
+        if (typeof val === 'number') {
+          data[i++] = val;
+        } else if (Array.isArray(val) && typeof val[0] === 'number') {
+          const arr = val as number[];
+          data[i++] = Math.sqrt(arr.reduce((sum, v) => sum + v * v, 0));
+        } else {
+          data[i++] = 0; // fallback for tensor
+        }
       }
     }
   }

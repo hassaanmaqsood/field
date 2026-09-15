@@ -1,9 +1,9 @@
 {
-  "name": "field-runtime",
+  "name": "field",
   "version": "0.1.0",
-  "description": "Interactive 3D Field Mathematics Runtime and Visualizer",
+  "description": "Interactive 3D Field Visualization",
   "license": "MIT",
-  "author": "Field Runtime Team",
+  "author": "Hassaan Maqsood",
   "keywords": [
     "field-theory",
     "differential-geometry",
