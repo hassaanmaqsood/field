@@ -1,118 +1,196 @@
 import * as THREE from 'three';
-import { Field, asScalar } from '../protocol/Field';
-
-const VERTEX = /* glsl */ `
-  out vec3 vObjPos;
-  void main() {
-    vObjPos = position;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const FRAGMENT = /* glsl */ `
-  precision highp float;
-  precision highp sampler3D;
-
-  uniform sampler3D uVoxels;
-  uniform vec3 uBoxMin;
-  uniform vec3 uBoxMax;
-  uniform float uIso;
-  uniform vec3 uCameraObjPos;
-  uniform vec3 uColor;
-
-  in vec3 vObjPos;
-
-  out vec4 fragColor;
-
-  // sample density at an object-space point, in [uBoxMin, uBoxMax]
-  float density(vec3 p) {
-    vec3 uv = (p - uBoxMin) / (uBoxMax - uBoxMin);
-    return texture(uVoxels, uv).r - uIso;
-  }
-
-  vec3 normalAt(vec3 p) {
-    float e = 0.01;
-    float dx = density(p + vec3(e,0,0)) - density(p - vec3(e,0,0));
-    float dy = density(p + vec3(0,e,0)) - density(p - vec3(0,e,0));
-    float dz = density(p + vec3(0,0,e)) - density(p - vec3(0,0,e));
-    return normalize(vec3(dx, dy, dz) + 1e-6);
-  }
-
-  // ray/box intersection, returns (tNear, tFar)
-  vec2 boxIntersect(vec3 ro, vec3 rd) {
-    vec3 inv = 1.0 / rd;
-    vec3 t0 = (uBoxMin - ro) * inv;
-    vec3 t1 = (uBoxMax - ro) * inv;
-    vec3 tmin = min(t0, t1);
-    vec3 tmax = max(t0, t1);
-    return vec2(max(max(tmin.x, tmin.y), tmin.z), min(min(tmax.x, tmax.y), tmax.z));
-  }
-
-  void main() {
-    vec3 ro = uCameraObjPos;
-    vec3 rd = normalize(vObjPos - uCameraObjPos);
-    vec2 tb = boxIntersect(ro, rd);
-    if (tb.x > tb.y || tb.y < 0.0) discard;
-    float t = max(tb.x, 0.0);
-    float tEnd = tb.y;
-
-    const int STEPS = 160;
-    float stepSize = (tEnd - t) / float(STEPS);
-    float prevD = density(ro + rd * t);
-    float hitT = -1.0;
-
-    for (int i = 1; i <= STEPS; i++) {
-      float ct = t + float(i) * stepSize;
-      float d = density(ro + rd * ct);
-      if (prevD > 0.0 && d <= 0.0) {
-        // bisection refine between (ct - stepSize) and ct
-        float lo = ct - stepSize;
-        float hi = ct;
-        for (int j = 0; j < 6; j++) {
-          float mid = 0.5 * (lo + hi);
-          float dm = density(ro + rd * mid);
-          if (dm > 0.0) lo = mid; else hi = mid;
-        }
-        hitT = 0.5 * (lo + hi);
-        break;
-      }
-      prevD = d;
-    }
-
-    if (hitT < 0.0) discard;
-    vec3 hitP = ro + rd * hitT;
-    vec3 n = normalAt(hitP);
-    vec3 lightDir = normalize(vec3(0.5, 0.8, 0.4));
-    float diff = max(dot(n, lightDir), 0.0);
-    float rim = pow(1.0 - max(dot(n, -rd), 0.0), 2.0);
-    vec3 color = uColor * (0.25 + 0.75 * diff) + vec3(0.15) * rim;
-    fragColor = vec4(color, 1.0);
-  }
-`;
+import { Field } from '../protocol/Field';
 
 export interface IsosurfaceHandle {
-  mesh: THREE.Mesh;
+  mesh: THREE.Object3D;
   setIso(value: number): void;
+  setShells?(shells: number[]): void;
   dispose(): void;
 }
 
+export interface IsosurfaceOptions {
+  resolution?: number;
+  shells?: number[];         // Iso-levels (default [0.0])
+  mode?: 'solid' | 'shells'; // 'shells' = concentric wireframe shells
+  color?: THREE.Color;
+}
+
+type Point3 = [number, number, number];
+
+interface GridNode {
+  p: Point3;
+  val: number;
+}
+
+const TETRAHEDRA: readonly (readonly [number, number, number, number])[] = [
+  [0, 5, 1, 6],
+  [0, 1, 2, 6],
+  [0, 2, 3, 6],
+  [0, 3, 7, 6],
+  [0, 7, 4, 6],
+  [0, 4, 5, 6],
+];
+
 /**
- * Bakes `field` (any scalar field, analytic or discrete — the render layer
- * never branches on continuity()) to a 3D texture via the generic sample()
- * bake operator, then raymarches that texture. This is the same code path
- * for analytic presets and imported/discrete datasets alike.
+ * Linearly interpolate coordinate between two corner nodes based on isovalue.
+ */
+function interp(n1: GridNode, n2: GridNode, iso: number): Point3 {
+  const d = n2.val - n1.val;
+  if (Math.abs(d) < 1e-9) {
+    return [
+      (n1.p[0] + n2.p[0]) * 0.5,
+      (n1.p[1] + n2.p[1]) * 0.5,
+      (n1.p[2] + n2.p[2]) * 0.5,
+    ];
+  }
+  const t = (iso - n1.val) / d;
+  return [
+    n1.p[0] + t * (n2.p[0] - n1.p[0]),
+    n1.p[1] + t * (n2.p[1] - n1.p[1]),
+    n1.p[2] + t * (n2.p[2] - n1.p[2]),
+  ];
+}
+
+/**
+ * Extracts wireframe edges for a single isovalue from a 3D scalar grid using Marching Tetrahedra.
+ */
+function extractWireframeForIso(
+  grid: Float32Array,
+  res: number,
+  min: Point3,
+  max: Point3,
+  iso: number
+): Float32Array {
+  const linePositions: number[] = [];
+
+  const getCorner = (x: number, y: number, z: number, c: number): GridNode => {
+    const dx = c === 1 || c === 2 || c === 5 || c === 6 ? 1 : 0;
+    const dy = c === 2 || c === 3 || c === 6 || c === 7 ? 1 : 0;
+    const dz = c >= 4 ? 1 : 0;
+
+    const ix = x + dx;
+    const iy = y + dy;
+    const iz = z + dz;
+
+    const flat = iz * res * res + iy * res + ix;
+    const wx = min[0] + (ix / (res - 1)) * (max[0] - min[0]);
+    const wy = min[1] + (iy / (res - 1)) * (max[1] - min[1]);
+    const wz = min[2] + (iz / (res - 1)) * (max[2] - min[2]);
+
+    return { p: [wx, wy, wz], val: grid[flat] };
+  };
+
+  const addTriangleEdges = (p0: Point3, p1: Point3, p2: Point3) => {
+    linePositions.push(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2]);
+    linePositions.push(p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]);
+    linePositions.push(p2[0], p2[1], p2[2], p0[0], p0[1], p0[2]);
+  };
+
+  for (let z = 0; z < res - 1; z++) {
+    for (let y = 0; y < res - 1; y++) {
+      for (let x = 0; x < res - 1; x++) {
+        const corners: GridNode[] = [];
+        for (let c = 0; c < 8; c++) {
+          corners.push(getCorner(x, y, z, c));
+        }
+
+        for (const tet of TETRAHEDRA) {
+          const v0 = corners[tet[0]];
+          const v1 = corners[tet[1]];
+          const v2 = corners[tet[2]];
+          const v3 = corners[tet[3]];
+
+          let mask = 0;
+          if (v0.val >= iso) mask |= 1;
+          if (v1.val >= iso) mask |= 2;
+          if (v2.val >= iso) mask |= 4;
+          if (v3.val >= iso) mask |= 8;
+
+          if (mask === 0 || mask === 15) continue;
+
+          if (mask === 1 || mask === 14) {
+            const p0 = interp(v0, v1, iso);
+            const p1 = interp(v0, v2, iso);
+            const p2 = interp(v0, v3, iso);
+            addTriangleEdges(p0, p1, p2);
+          } else if (mask === 2 || mask === 13) {
+            const p0 = interp(v1, v0, iso);
+            const p1 = interp(v1, v2, iso);
+            const p2 = interp(v1, v3, iso);
+            addTriangleEdges(p0, p1, p2);
+          } else if (mask === 4 || mask === 11) {
+            const p0 = interp(v2, v0, iso);
+            const p1 = interp(v2, v1, iso);
+            const p2 = interp(v2, v3, iso);
+            addTriangleEdges(p0, p1, p2);
+          } else if (mask === 8 || mask === 7) {
+            const p0 = interp(v3, v0, iso);
+            const p1 = interp(v3, v1, iso);
+            const p2 = interp(v3, v2, iso);
+            addTriangleEdges(p0, p1, p2);
+          } else if (mask === 3 || mask === 12) {
+            const p0 = interp(v0, v2, iso);
+            const p1 = interp(v0, v3, iso);
+            const p2 = interp(v1, v2, iso);
+            const p3 = interp(v1, v3, iso);
+            addTriangleEdges(p0, p1, p2);
+            addTriangleEdges(p2, p1, p3);
+          } else if (mask === 5 || mask === 10) {
+            const p0 = interp(v0, v1, iso);
+            const p1 = interp(v0, v3, iso);
+            const p2 = interp(v2, v1, iso);
+            const p3 = interp(v2, v3, iso);
+            addTriangleEdges(p0, p1, p2);
+            addTriangleEdges(p2, p1, p3);
+          } else if (mask === 6 || mask === 9) {
+            const p0 = interp(v1, v0, iso);
+            const p1 = interp(v1, v3, iso);
+            const p2 = interp(v2, v0, iso);
+            const p3 = interp(v2, v3, iso);
+            addTriangleEdges(p0, p1, p2);
+            addTriangleEdges(p2, p1, p3);
+          }
+        }
+      }
+    }
+  }
+
+  return new Float32Array(linePositions);
+}
+
+/**
+ * Builds nested wireframe isosurface shells using Marching Tetrahedra.
+ * Produces zero polygon fills, zero lighting, zero shading.
+ * Differentiates shells by line weight and opacity only.
  */
 export function buildIsosurface(
   field: Field,
-  resolution = 48,
-  color = new THREE.Color(0x4fd1c5)
+  optsOrRes: number | IsosurfaceOptions = 36,
+  _legacyColor?: THREE.Color
 ): IsosurfaceHandle {
-  const domain = field.domain();
-  const [dx, dy, dz] = domain;
-  const baked = field.sample({ resolution: [resolution, resolution, resolution] });
+  let resolution = 36;
+  let currentShells = [0.0];
 
-  const data = new Float32Array(resolution * resolution * resolution);
-  let i = 0;
+  if (typeof optsOrRes === 'number') {
+    resolution = optsOrRes;
+  } else if (optsOrRes) {
+    if (optsOrRes.resolution !== undefined) resolution = optsOrRes.resolution;
+    if (optsOrRes.shells && optsOrRes.shells.length > 0) currentShells = optsOrRes.shells;
+  }
+
+  const domain = field.domain();
+  const dx = domain[0] ?? { min: -4, max: 4 };
+  const dy = domain[1] ?? { min: -4, max: 4 };
+  const dz = domain[2] ?? { min: -4, max: 4 };
+
+  const minPoint: Point3 = [dx.min, dy.min, dz.min];
+  const maxPoint: Point3 = [dx.max, dy.max, dz.max];
+
+  // Sample field into 3D scalar grid
+  const baked = field.sample({ resolution: [resolution, resolution, resolution] });
+  const grid = new Float32Array(resolution * resolution * resolution);
+
+  let idx = 0;
   for (let zi = 0; zi < resolution; zi++) {
     const z = dz.min + (zi / (resolution - 1)) * (dz.max - dz.min);
     for (let yi = 0; yi < resolution; yi++) {
@@ -121,57 +199,95 @@ export function buildIsosurface(
         const x = dx.min + (xi / (resolution - 1)) * (dx.max - dx.min);
         const val = baked.at([x, y, z]);
         if (typeof val === 'number') {
-          data[i++] = val;
+          grid[idx++] = val;
         } else if (Array.isArray(val) && typeof val[0] === 'number') {
           const arr = val as number[];
-          data[i++] = Math.sqrt(arr.reduce((sum, v) => sum + v * v, 0));
+          grid[idx++] = Math.sqrt(arr.reduce((sum, v) => sum + v * v, 0));
         } else {
-          data[i++] = 0; // fallback for tensor
+          grid[idx++] = 0;
         }
       }
     }
   }
 
-  const texture = new THREE.Data3DTexture(data, resolution, resolution, resolution);
-  texture.format = THREE.RedFormat;
-  texture.type = THREE.FloatType;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.unpackAlignment = 1;
-  texture.needsUpdate = true;
+  const group = new THREE.Group();
 
-  const size = new THREE.Vector3(dx.max - dx.min, dy.max - dy.min, dz.max - dz.min);
-  const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
-  const material = new THREE.ShaderMaterial({
-    vertexShader: VERTEX,
-    fragmentShader: FRAGMENT,
-    uniforms: {
-      uVoxels: { value: texture },
-      uBoxMin: { value: new THREE.Vector3(-size.x / 2, -size.y / 2, -size.z / 2) },
-      uBoxMax: { value: new THREE.Vector3(size.x / 2, size.y / 2, size.z / 2) },
-      uIso: { value: 0 },
-      uCameraObjPos: { value: new THREE.Vector3() },
-      uColor: { value: new THREE.Vector3(color.r, color.g, color.b) },
-    },
-    side: THREE.BackSide, // so ray origin (camera) can be outside or inside the box
-    glslVersion: THREE.GLSL3,
-  });
+  function clearGroup() {
+    while (group.children.length > 0) {
+      const child = group.children[0] as THREE.LineSegments;
+      group.remove(child);
+      child.geometry?.dispose();
+      (child.material as THREE.Material)?.dispose();
+    }
+  }
 
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.onBeforeRender = (_r, _s, camera) => {
-    const objPos = mesh.worldToLocal(camera.position.clone());
-    (material.uniforms.uCameraObjPos.value as THREE.Vector3).copy(objPos);
-  };
+  function renderShells(shells: number[]) {
+    clearGroup();
+
+    if (shells.length === 0) return;
+
+    // Rank shells by absolute threshold magnitude (closest to 0 = innermost)
+    const sortedShells = shells.slice().sort((a, b) => Math.abs(a) - Math.abs(b));
+
+    sortedShells.forEach((iso, rankIndex) => {
+      const positions = extractWireframeForIso(grid, resolution, minPoint, maxPoint, iso);
+      if (positions.length === 0) return;
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+      // Opacity progression: innermost closest to expr=0 is boldest, outer shells thinner/lighter
+      let opacity = 0.85;
+      if (sortedShells.length > 1) {
+        if (rankIndex === 0) {
+          opacity = 0.90; // innermost
+        } else if (rankIndex === 1 && sortedShells.length > 2) {
+          opacity = 0.45; // middle
+        } else {
+          opacity = 0.22; // outermost
+        }
+      }
+
+      const material = new THREE.LineBasicMaterial({
+        color: 0x0D0D0E, // strictly --ink
+        transparent: true,
+        opacity,
+        depthWrite: false, // allows nested concentric shells to be visible through each other
+      });
+
+      const lines = new THREE.LineSegments(geometry, material);
+      group.add(lines);
+
+      // For innermost shell, add a subtle micro-offset line pass to achieve a slightly bolder line weight
+      if (rankIndex === 0 && sortedShells.length > 1) {
+        const boldGeom = geometry.clone();
+        const boldMat = new THREE.LineBasicMaterial({
+          color: 0x0D0D0E,
+          transparent: true,
+          opacity: 0.35,
+          depthWrite: false,
+        });
+        const boldLines = new THREE.LineSegments(boldGeom, boldMat);
+        boldLines.scale.setScalar(1.002);
+        group.add(boldLines);
+      }
+    });
+  }
+
+  renderShells(currentShells);
 
   return {
-    mesh,
+    mesh: group,
     setIso: (value: number) => {
-      material.uniforms.uIso.value = value;
+      currentShells = [value];
+      renderShells(currentShells);
+    },
+    setShells: (newShells: number[]) => {
+      currentShells = newShells.slice();
+      renderShells(currentShells);
     },
     dispose: () => {
-      geometry.dispose();
-      material.dispose();
-      texture.dispose();
+      clearGroup();
     },
   };
 }

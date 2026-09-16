@@ -9,13 +9,20 @@ import { buildVectorGlyphs, buildTensorGlyphs } from './render/glyphs';
 import { buildProbeVolume, probe } from './render/probe';
 import { buildSlicePlane } from './render/slice-plane';
 import { buildStreamlines } from './render/streamlines';
+import { buildHalftoneMesh } from './render/halftone';
+import { buildBandsMesh } from './render/bands';
+import { buildIsolinesMesh } from './render/isolines';
+import { buildHeightFieldMesh } from './render/height-field';
+import { buildTerracesMesh } from './render/terraces';
+import { AsciiViewportRenderer } from './render/ascii-viewport';
 import { presetRegistry, userFormulaPreset } from './presets/analyticPresets';
 import { AnalyticField } from './backends/AnalyticField';
 
 import { gradient, divergence, curl, laplacian } from './algebra/differential';
 import { add, subtract, dot } from './algebra/arithmetic';
 import { min as fMin, max as fMax, smoothMin } from './algebra/boolean';
-import { slice, pan } from './algebra/slicing';
+import { slice, pan, rotate2D, mirror } from './algebra/slicing';
+import { guarded } from './algebra/guarded';
 import { bake, fit } from './algebra/bakeFit';
 import { vonMisesStress } from './plugins/mechanical';
 import { GridField } from './backends/GridField';
@@ -25,19 +32,19 @@ import { createFieldEditor, FieldEditorHandle } from './ui/field-editor';
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const canvas            = document.getElementById('canvas')            as HTMLCanvasElement;
-const inspector         = document.getElementById('inspector')         as HTMLDivElement;
-const inspectorBar      = document.getElementById('inspector-bar')     as HTMLDivElement;
-const toggleBtn         = document.getElementById('toggle-inspector')  as HTMLButtonElement;
+const editorPanel       = document.getElementById('editor-panel')       as HTMLElement;
+const toggleEditorBtn   = document.getElementById('toggle-editor-btn') as HTMLButtonElement | null;
+const closeDrawerBtn    = document.getElementById('close-drawer-btn')  as HTMLButtonElement | null;
 const codeEditorMount   = document.getElementById('code-editor-mount') as HTMLDivElement;
 const runBtn            = document.getElementById('run-btn')           as HTMLButtonElement;
 const progressWrap      = document.getElementById('progress-wrap')     as HTMLDivElement;
 const progressBar       = document.getElementById('progress-bar')      as HTMLDivElement;
 const errorMsg          = document.getElementById('error-msg')         as HTMLSpanElement;
-const statusDot         = document.getElementById('status-dot')        as HTMLSpanElement;
-const statusText        = document.getElementById('status-text')       as HTMLSpanElement;
-const typeBadge         = document.getElementById('type-badge')        as HTMLSpanElement;
-const barDot            = document.getElementById('bar-dot')           as HTMLSpanElement;
-const barType           = document.getElementById('bar-type')          as HTMLSpanElement;
+const statusBadge       = document.getElementById('status-badge')      as HTMLDivElement | null;
+const statusDot         = document.getElementById('status-dot')        as HTMLSpanElement | null;
+const statusText        = document.getElementById('status-text')       as HTMLSpanElement | null;
+const typeBadge         = document.getElementById('type-badge')        as HTMLSpanElement | null;
+const typeText          = document.getElementById('type-text')         as HTMLSpanElement | null;
 const probeValue        = document.getElementById('probe-value')       as HTMLSpanElement;
 
 // Topbar right & settings dropdown
@@ -64,7 +71,18 @@ const stripRightEl      = document.getElementById('strip-right')       as HTMLCa
 
 
 // ── Scene ──────────────────────────────────────────────────────────────────
-const { scene, camera, renderer, controls, fieldGroup, updateBoxWire } = createScene(canvas);
+const { scene, camera, renderer, controls, fieldGroup, updateBoxWire, clock, addFrameListener } = createScene(canvas);
+
+// ASCII Viewport renderer
+const asciiViewportEl = document.getElementById('ascii-viewport') as HTMLElement | null;
+let asciiRenderer: AsciiViewportRenderer | null = null;
+
+// Subscribe animation frame loop for real-time ASCII readback
+addFrameListener((_dt, _t) => {
+  if (asciiRenderer && asciiViewportEl && !asciiViewportEl.classList.contains('hidden')) {
+    asciiRenderer.renderToAscii(scene, camera);
+  }
+});
 
 // ── App state ──────────────────────────────────────────────────────────────
 let displayFields: Field[] = [];
@@ -88,9 +106,11 @@ let activeWorker: Worker | null = null;
 
 // ── Status helpers ────────────────────────────────────────────────────────
 function setStatus(state: 'ready' | 'busy' | 'error', text: string, progress?: number) {
-  statusDot.className = `status-dot ${state}`;
-  barDot.className    = `status-dot ${state}`;
-  statusText.textContent = text;
+  if (statusBadge) {
+    statusBadge.className = `status-badge ${state}`;
+  }
+  if (statusDot) statusDot.className = `status-dot ${state}`;
+  if (statusText) statusText.textContent = text.toUpperCase();
   if (progress !== undefined) {
     progressWrap.style.display = 'block';
     progressBar.style.width = `${Math.round(progress * 100)}%`;
@@ -113,9 +133,12 @@ function updateTypeBadge(field: Field) {
   const rankIn = field.rankIn();
   const rankOutStr = field.rankOut().length === 0 ? 'ℝ' :
     `ℝ${field.rankOut().join('×')}`;
-  const badge = `${label} · ℝ${rankIn}→${rankOutStr}`;
-  typeBadge.textContent = badge;
-  barType.textContent   = badge;
+  const badge = `${label} · ℝ${rankIn}→${rankOutStr}`.toUpperCase();
+  if (typeText) {
+    typeText.textContent = badge;
+  } else if (typeBadge) {
+    typeBadge.textContent = badge;
+  }
 }
 
 // ── Field construction from config ────────────────────────────────────────
@@ -189,6 +212,18 @@ function buildField(config: FieldPipeline): Field {
         }
         break;
       }
+      case 'rotate2D': {
+        f = rotate2D(f, op.a0 ?? 0, op.a1 ?? 1, op.angle ?? Math.PI / 4);
+        break;
+      }
+      case 'mirror': {
+        f = mirror(f, op.axis ?? 0, op.value ?? 0);
+        break;
+      }
+      case 'guarded': {
+        f = guarded(f);
+        break;
+      }
     }
   }
 
@@ -206,6 +241,7 @@ function clearFieldGroup() {
   isoHandles = [];
   probeVolumes = [];
   displayFields = [];
+  asciiRenderer?.unmount();
 }
 
 // ── Render layers ─────────────────────────────────────────────────────────
@@ -216,18 +252,89 @@ function renderLayer(field: Field, layer: ViewLayer, box: { min: number; max: nu
 
   switch (layer.kind) {
     case 'iso': {
-      const color = new THREE.Color(layer.color ?? '#2563eb');
-      const res = (layer as any).res ?? sampleRes ?? 48;
-      const handle = buildIsosurface(field, res, color);
-      
-      let defaultLevel = 0;
-      if (shapeLabel(field.rankOut()) === 'vector') {
-        defaultLevel = 1.0;
-      }
-      handle.setIso(layer.level ?? defaultLevel);
-      
+      const color = new THREE.Color(layer.color ?? '#0D0D0E');
+      const res = layer.res ?? sampleRes ?? 48;
+      const handle = buildIsosurface(field, {
+        resolution: res,
+        shells: [layer.level ?? 0.0],
+        color,
+      });
+      handle.setIso(layer.level ?? 0.0);
       fieldGroup.add(handle.mesh);
       isoHandles.push(handle);
+      break;
+    }
+    case 'shells': {
+      const res = layer.res ?? sampleRes ?? 48;
+      const shells = layer.shells && layer.shells.length > 0 ? layer.shells : [-0.4, 0.0, 0.4];
+      const handle = buildIsosurface(field, {
+        resolution: res,
+        shells,
+        mode: 'shells',
+      });
+      fieldGroup.add(handle.mesh);
+      isoHandles.push(handle);
+      break;
+    }
+    case 'density': {
+      const mesh = buildHalftoneMesh(field, {
+        cellSize: layer.cellSize ?? 16,
+        domain: boxBounds,
+        t: clock.getElapsedTime(),
+      });
+      fieldGroup.add(mesh);
+      break;
+    }
+    case 'bands': {
+      const mesh = buildBandsMesh(field, {
+        resolution: layer.res ?? 64,
+        domain: boxBounds,
+        t: clock.getElapsedTime(),
+      });
+      fieldGroup.add(mesh);
+      break;
+    }
+    case 'isolines': {
+      const mesh = buildIsolinesMesh(field, {
+        res: layer.res ?? 128,
+        domain: boxBounds,
+        t: clock.getElapsedTime(),
+      });
+      fieldGroup.add(mesh);
+      break;
+    }
+    case 'height': {
+      const mesh = buildHeightFieldMesh(field, {
+        res: layer.res ?? 64,
+        heightScale: layer.heightScale ?? 2.5,
+        t: clock.getElapsedTime(),
+        domain: boxBounds,
+      });
+      fieldGroup.add(mesh);
+      break;
+    }
+    case 'terraces': {
+      const mesh = buildTerracesMesh(field, {
+        res: layer.res ?? 48,
+        heightScale: layer.heightScale ?? 2.5,
+        steps: layer.tiers ?? 6,
+        t: clock.getElapsedTime(),
+        domain: boxBounds,
+      });
+      fieldGroup.add(mesh);
+      break;
+    }
+    case 'ascii': {
+      if (asciiViewportEl) {
+        if (!asciiRenderer) {
+          asciiRenderer = new AsciiViewportRenderer(renderer, {
+            cols: layer.cols ?? 120,
+            rows: layer.rows ?? 40,
+            fps: layer.fps ?? 30,
+          });
+        }
+        asciiRenderer.mountToElement(asciiViewportEl);
+      }
       break;
     }
     case 'glyphs': {
@@ -378,9 +485,12 @@ async function runPipeline(source: string) {
 
       // Render each view layer
       if (pipeline.view.length === 0) {
-        // Default: isosurface
-        const handle = buildIsosurface(field, config.sample.res);
-        handle.setIso(0);
+        // Default: discrete concentric shells
+        const handle = buildIsosurface(field, {
+          resolution: config.sample.res,
+          shells: [-0.4, 0.0, 0.4],
+          mode: 'shells',
+        });
         fieldGroup.add(handle.mesh);
         isoHandles.push(handle);
       } else {
@@ -400,8 +510,8 @@ async function runPipeline(source: string) {
     if (displayFields.length > 0) {
       updateTypeBadge(displayFields[0]);
     } else {
-      typeBadge.textContent = 'No field';
-      barType.textContent = 'No field';
+      if (typeText) typeText.textContent = 'NO FIELD';
+      else if (typeBadge) typeBadge.textContent = 'NO FIELD';
     }
 
     setStatus('ready', 'Ready');
@@ -428,22 +538,41 @@ editorHandle = createFieldEditor(
   },
 );
 
-// ── Inspector toggle ──────────────────────────────────────────────────────
-function expandInspector() {
-  inspector.classList.remove('hidden');
-  inspectorBar.classList.add('hidden');
-  inspectorBar.setAttribute('aria-expanded', 'false');
-  editorHandle.focus();
-}
-function collapseInspector() {
-  inspector.classList.add('hidden');
-  inspectorBar.classList.remove('hidden');
-  inspectorBar.setAttribute('aria-expanded', 'true');
+// ── Inspector / Editor drawer toggle ──────────────────────────────────────
+function toggleEditor() {
+  if (window.innerWidth <= 900) {
+    editorPanel.classList.toggle('open');
+  } else {
+    editorPanel.classList.toggle('collapsed');
+  }
+  window.dispatchEvent(new Event('resize'));
 }
 
-toggleBtn.addEventListener('click', collapseInspector);
-inspectorBar.addEventListener('click', expandInspector);
-inspectorBar.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') expandInspector(); });
+function expandInspector() {
+  if (window.innerWidth <= 900) {
+    editorPanel.classList.add('open');
+  } else {
+    editorPanel.classList.remove('collapsed');
+  }
+  editorHandle.focus();
+  window.dispatchEvent(new Event('resize'));
+}
+
+function collapseInspector() {
+  if (window.innerWidth <= 900) {
+    editorPanel.classList.remove('open');
+  } else {
+    editorPanel.classList.add('collapsed');
+  }
+  window.dispatchEvent(new Event('resize'));
+}
+
+if (toggleEditorBtn) toggleEditorBtn.addEventListener('click', toggleEditor);
+if (closeDrawerBtn) closeDrawerBtn.addEventListener('click', () => {
+  editorPanel.classList.remove('open');
+  editorPanel.classList.add('collapsed');
+  window.dispatchEvent(new Event('resize'));
+});
 
 // ── Run button ────────────────────────────────────────────────────────────
 runBtn.addEventListener('click', () => runPipeline(editorHandle.getValue()));
@@ -629,7 +758,7 @@ canvas.addEventListener('click', (ev) => {
 });
 
 // ── Jog pad — LEFT (BOX control) ─────────────────────────────────────────
-const padBox = new JogPad(diskLeftEl, stripLeftEl, '#B45309', 'BOX', {
+const padBox = new JogPad(diskLeftEl, stripLeftEl, '#0D0D0E', 'BOX', {
   onXY: (x, y) => {
     const right = new THREE.Vector3();
     const up    = new THREE.Vector3();
@@ -650,7 +779,7 @@ const padBox = new JogPad(diskLeftEl, stripLeftEl, '#B45309', 'BOX', {
 });
 
 // ── Jog pad — RIGHT (CAMERA control) ─────────────────────────────────────
-const padCam = new JogPad(diskRightEl, stripRightEl, '#1D4ED8', 'CAM', {
+const padCam = new JogPad(diskRightEl, stripRightEl, '#0D0D0E', 'CAM', {
   onXY: (x, y) => {
     const offset = camera.position.clone().sub(controls.target);
     const sph    = new THREE.Spherical().setFromVector3(offset);

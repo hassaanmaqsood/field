@@ -6,155 +6,146 @@
   <meta name="description" content="Field Runtime — interactive field mathematics visualiser" />
   <title>Field Runtime</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&display=swap" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
 
-  <!-- Full-screen 3D canvas -->
-  <canvas id="canvas" aria-label="Field visualisation viewport"></canvas>
-
-  <!-- ── Top-right action bar (Guide & Settings/Controls) ────────── -->
-  <div id="topbar-right" class="topbar-right">
-    <!-- Help / Guide button -->
-    <button id="help-btn" class="topbar-btn" title="Syntax Guide & Controls" aria-label="Open Guide">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"></circle>
-        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-      </svg>
-      <span>Guide</span>
-    </button>
-
-    <!-- Settings / Controls dropdown container -->
-    <div class="dropdown-wrap" id="settings-wrap">
-      <button id="settings-btn" class="topbar-btn" title="Settings & Controls" aria-label="Settings and Controls" aria-expanded="false">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-        </svg>
-        <span>Controls</span>
-        <span class="dropdown-chevron">▾</span>
-      </button>
-
-      <!-- Dropdown menu -->
-      <div id="settings-dropdown" class="dropdown-menu hidden" role="menu" aria-label="Controls and Settings">
-        <div class="dropdown-section-title">Canvas Drag Mode</div>
-        <div class="segmented-ctrl" role="radiogroup" aria-label="Drag target">
-          <button id="menu-drag-cam" class="seg-btn active" role="radio" aria-checked="true" title="Canvas drag orbits camera">CAM (Orbit)</button>
-          <button id="menu-drag-box" class="seg-btn" role="radio" aria-checked="false" title="Canvas drag pans sample box">BOX (Pan)</button>
-        </div>
-
-        <div class="dropdown-divider"></div>
-
-        <div class="dropdown-section-title">Pads Layout</div>
-        <div class="segmented-ctrl" role="radiogroup" aria-label="Pad layout">
-          <button id="menu-pads-corners" class="seg-btn active" role="radio" aria-checked="true" title="Pads placed at lower corners">Corners</button>
-          <button id="menu-pads-center" class="seg-btn" role="radio" aria-checked="false" title="Pads side-by-side in center">Side-by-side</button>
-        </div>
-
-        <div class="dropdown-divider"></div>
-
-        <div class="dropdown-section-title">Visibility</div>
-        <label class="dropdown-toggle-row">
-          <span>Show Jog Pads</span>
-          <div class="toggle-switch">
-            <input type="checkbox" id="toggle-pads-visible" checked />
-            <span class="toggle-slider"></span>
+  <div class="app-layout">
+    <!-- Top Bar -->
+    <header class="app-header">
+      <div class="header-left">
+        <button id="toggle-editor-btn" class="topbar-btn outline-btn" aria-label="Toggle Code Editor" title="Toggle Code Editor">CODE</button>
+        <span class="app-wordmark">FIELD RUNTIME</span>
+        <div class="header-status-group">
+          <div id="status-badge" class="status-badge ready">
+            <span id="status-dot" class="status-dot"></span>
+            <span id="status-text" class="status-label">READY</span>
           </div>
-        </label>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Inspector overlay (expanded) ────────────────────────────── -->
-  <div id="inspector" class="inspector" role="complementary" aria-label="Field inspector">
-    <div class="inspector-header">
-      <span class="inspector-title">Field Runtime</span>
-      <div class="header-meta">
-        <span id="status-dot" class="status-dot ready" title="Computation status"></span>
-        <span id="status-text" class="status-text">Ready</span>
-        <span id="type-badge" class="type-badge">scalar · ℝ³→ℝ</span>
-        <button id="toggle-inspector" class="btn-icon" title="Minimise inspector" aria-label="Minimise inspector">⊟</button>
-      </div>
-    </div>
-
-    <div class="inspector-body">
-      <!-- CodeMirror 6 Mount -->
-      <div id="code-editor-mount" class="code-editor-mount" aria-label="Field definition editor"></div>
-
-      <div class="inspector-footer">
-        <button id="run-btn" aria-label="Run field computation">Run</button>
-        <div class="progress-bar-wrap" id="progress-wrap" style="display:none">
-          <div class="progress-bar" id="progress-bar"></div>
+          <div id="type-badge" class="type-badge">
+            <span class="type-dot"></span>
+            <span id="type-text">SCALAR · ℝ³→ℝ</span>
+          </div>
         </div>
-        <span id="error-msg" class="error-msg" role="alert"></span>
       </div>
+
+      <div class="header-actions">
+        <button id="run-btn" class="topbar-btn run-btn" aria-label="Run computation">RUN</button>
+        <button id="help-btn" class="topbar-btn outline-btn" aria-label="Open Guide">GUIDE</button>
+        <div class="dropdown-wrap" id="settings-wrap">
+          <button id="settings-btn" class="topbar-btn outline-btn" aria-label="Settings and Controls" aria-expanded="false">
+            <span>CONTROLS</span>
+            <span class="dropdown-chevron">▾</span>
+          </button>
+          <!-- Controls dropdown menu -->
+          <div id="settings-dropdown" class="dropdown-menu hidden" role="menu" aria-label="Controls and Settings">
+            <div class="dropdown-section-title">CANVAS DRAG MODE</div>
+            <div class="segmented-ctrl" role="radiogroup" aria-label="Drag target">
+              <button id="menu-drag-cam" class="seg-btn active" role="radio" aria-checked="true">CAM (ORBIT)</button>
+              <button id="menu-drag-box" class="seg-btn" role="radio" aria-checked="false">BOX (PAN)</button>
+            </div>
+
+            <div class="dropdown-divider"></div>
+
+            <div class="dropdown-section-title">PADS LAYOUT</div>
+            <div class="segmented-ctrl" role="radiogroup" aria-label="Pad layout">
+              <button id="menu-pads-corners" class="seg-btn active" role="radio" aria-checked="true">CORNERS</button>
+              <button id="menu-pads-center" class="seg-btn" role="radio" aria-checked="false">CENTER</button>
+            </div>
+
+            <div class="dropdown-divider"></div>
+
+            <div class="dropdown-section-title">VISIBILITY</div>
+            <label class="dropdown-toggle-row">
+              <span>SHOW JOG PADS</span>
+              <div class="toggle-switch">
+                <input type="checkbox" id="toggle-pads-visible" checked />
+                <span class="toggle-slider"></span>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- App Main: Side-by-side on desktop, drawer on responsive breakpoints -->
+    <div class="app-main">
+      <!-- Code Specification Drawer / Panel -->
+      <aside id="editor-panel" class="editor-panel" aria-label="Field code editor">
+        <div class="editor-panel-header">
+          <span class="panel-header-title">SPECIFICATION</span>
+          <button id="close-drawer-btn" class="drawer-close-btn" aria-label="Close Code Drawer" title="Close Panel">✕</button>
+        </div>
+        <!-- CodeMirror Mount -->
+        <div id="code-editor-mount" class="code-editor-mount" aria-label="Field definition editor"></div>
+        <div class="editor-panel-footer">
+          <div class="progress-bar-wrap" id="progress-wrap" style="display:none">
+            <div class="progress-bar" id="progress-bar"></div>
+          </div>
+          <span id="error-msg" class="error-msg" role="alert"></span>
+        </div>
+      </aside>
+
+      <!-- Viewport area (Canvas fills remaining space) -->
+      <main class="viewport-area" id="viewport-area">
+        <canvas id="canvas" aria-label="Field visualisation viewport"></canvas>
+        <pre id="ascii-viewport" class="hidden" aria-hidden="true"></pre>
+
+        <!-- Probe readout strip -->
+        <div id="probe-strip" class="probe-strip" role="status" aria-live="polite">
+          <span class="probe-tag">PROBE</span>
+          <span id="probe-value">— CLICK FIELD TO SAMPLE —</span>
+        </div>
+
+        <!-- Controls overlay containing jog pads -->
+        <div class="controls-overlay" id="controls-overlay">
+          <!-- Left pad: controls sample box (BOX) -->
+          <div id="pad-left" class="jog-pad-wrapper pad-left" aria-label="Sample box jog pad">
+            <div class="jog-inner">
+              <div class="pad-label">BOX</div>
+              <div class="jog-disk-row">
+                <canvas id="disk-left"  class="jog-disk"  width="110" height="110" aria-label="Box XY"></canvas>
+                <canvas id="strip-left" class="jog-strip" width="14"  height="80"  aria-label="Box Z"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right pad: controls camera (CAM) -->
+          <div id="pad-right" class="jog-pad-wrapper pad-right" aria-label="Camera jog pad">
+            <div class="jog-inner">
+              <div class="pad-label">CAM</div>
+              <div class="jog-disk-row">
+                <canvas id="disk-right"  class="jog-disk"  width="110" height="110" aria-label="Camera orbit"></canvas>
+                <canvas id="strip-right" class="jog-strip" width="14"  height="80"  aria-label="Zoom"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
   </div>
 
-  <!-- ── Inspector collapsed bar ─────────────────────────────────── -->
-  <div id="inspector-bar" class="inspector-bar hidden" role="button" tabindex="0"
-    aria-label="Expand inspector" aria-expanded="false">
-    <span class="inspector-title">Field Runtime</span>
-    <span id="bar-dot" class="status-dot ready"></span>
-    <span id="bar-type" class="type-badge">scalar · ℝ³→ℝ</span>
-    <button class="btn-icon" tabindex="-1" aria-hidden="true">⊞</button>
-  </div>
-
-  <!-- ── Probe readout ────────────────────────────────────────────── -->
-  <div id="probe-strip" class="probe-strip" role="status" aria-live="polite">
-    <span class="probe-tag">probe</span>
-    <span id="probe-value">— click field to sample —</span>
-  </div>
-
-  <!-- ── Jog Pads ─────────────────────────────────────────────────── -->
-  <!-- Left pad: controls sample box (BOX) -->
-  <div id="pad-left" class="jog-pad-wrapper pad-left" aria-label="Sample box jog pad">
-    <div class="jog-inner">
-      <div class="pad-label">BOX</div>
-      <div class="jog-disk-row">
-        <canvas id="disk-left"  class="jog-disk"  width="110" height="110" aria-label="Box XY"></canvas>
-        <canvas id="strip-left" class="jog-strip" width="14"  height="80"  aria-label="Box Z"></canvas>
-      </div>
-    </div>
-  </div>
-
-  <!-- Right pad: controls camera (CAM) -->
-  <div id="pad-right" class="jog-pad-wrapper pad-right" aria-label="Camera jog pad">
-    <div class="jog-inner">
-      <div class="pad-label">CAM</div>
-      <div class="jog-disk-row">
-        <canvas id="disk-right"  class="jog-disk"  width="110" height="110" aria-label="Camera orbit"></canvas>
-        <canvas id="strip-right" class="jog-strip" width="14"  height="80"  aria-label="Zoom"></canvas>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Guide Modal ──────────────────────────────────────────────── -->
+  <!-- Guide Modal -->
   <div id="guide-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="guide-modal-title">
     <div class="modal-card">
       <div class="modal-header">
         <div class="modal-title-group">
-          <h2 id="guide-modal-title" class="modal-title">Field Runtime Guide</h2>
-          <span class="modal-subtitle">Syntax, Operators & Visual Navigation</span>
+          <h2 id="guide-modal-title" class="modal-title">FIELD RUNTIME GUIDE</h2>
+          <span class="modal-subtitle">SYNTAX, OPERATORS &amp; VISUAL NAVIGATION</span>
         </div>
-        <button id="guide-close-btn" class="btn-icon modal-close-btn" aria-label="Close guide">✕</button>
+        <button id="guide-close-btn" class="drawer-close-btn modal-close-btn" aria-label="Close guide">✕</button>
       </div>
       <div class="modal-body">
         <section class="guide-section">
-          <h3>1. Unified Field Specification Syntax</h3>
+          <h3>1. UNIFIED FIELD SPECIFICATION SYNTAX</h3>
           <p>Declare the field, operations, view representation, and spatial sampling in a single unified script:</p>
           <pre><code>field {
-  preset: radial           # or expr: "sin(x)*cos(y)"
+  expr: sqrt(x*x + y*y + z*z) - 1.8
   domain: x[-4:4] y[-4:4] z[-4:4]
 }
-ops {
-  gradient                 # ∇f (or divergence, curl, laplacian)
-}
 view {
-  iso { level: 0.0 color: #1D4ED8 opacity: 0.9 }
-  streamlines { seeds: 48 steps: 150 cmap: viridis }
+  shells { [-0.4, 0.0, 0.4] }
 }
 sample {
   res: 48
@@ -163,10 +154,10 @@ sample {
         </section>
 
         <section class="guide-section">
-          <h3>2. Presets & Differential Operators</h3>
+          <h3>2. PRESETS &amp; DIFFERENTIAL OPERATORS</h3>
           <table class="guide-table">
             <thead>
-              <tr><th>Type</th><th>Identifier</th><th>Description</th></tr>
+              <tr><th>TYPE</th><th>IDENTIFIER</th><th>DESCRIPTION</th></tr>
             </thead>
             <tbody>
               <tr><td>Preset</td><td><code>radial</code></td><td>Concentric spherical shells ℝ³→ℝ</td></tr>
@@ -180,31 +171,29 @@ sample {
               <tr><td>Op</td><td><code>curl</code></td><td>∇×F: Vector curl (vorticity)</td></tr>
               <tr><td>Op</td><td><code>laplacian</code></td><td>∇²f: Scalar Laplacian diffusion rate</td></tr>
               <tr><td>Op</td><td><code>combine</code></td><td>Algebraic combine with preset (add, min, max, smin, dot)</td></tr>
-              <tr><td>Op</td><td><code>slice</code></td><td>Planar cross-section cut at specific axis & value</td></tr>
+              <tr><td>Op</td><td><code>slice</code></td><td>Planar cross-section cut at specific axis &amp; value</td></tr>
             </tbody>
           </table>
         </section>
 
         <section class="guide-section">
-          <h3>3. Custom Vectors & Discrete Fields</h3>
-          <p><strong>Vector Fields:</strong> Use bracket notation in the <code>expr</code> field to define 3D vectors: <code>expr: [sin(y), cos(x), 0.5*z]</code>.</p>
-          <p><strong>Discrete Fields (Grids):</strong> You can bake an analytic function into a discrete voxel grid to simulate numpy/CSV arrays by adding the bake operator: <code>ops { bake { res: 64 } }</code>.</p>
+          <h3>3. NESTED WIREFRAME SHELLS</h3>
+          <p>Isosurfaces render as nested wireframe shells over the sampled domain with no polygon faces, no lighting, and no shading. Line weight and opacity differentiate inner and outer shells.</p>
         </section>
 
         <section class="guide-section">
-          <h3>4. Dual Controllers & Jog Pads</h3>
+          <h3>4. DUAL CONTROLLERS &amp; JOG PADS</h3>
           <ul class="guide-list">
-            <li><strong>Left Pad (BOX - Amber):</strong> Controls the sampling domain box. Drag disk for XY planar translation, drag vertical slider for Z-axis shift. Double-tap to reset box position.</li>
-            <li><strong>Right Pad (CAM - Blue):</strong> Controls camera viewpoint. Drag disk to orbit azimuth and elevation, drag vertical slider to zoom/dolly. Double-tap to reset view.</li>
-            <li><strong>Pinch & Touch:</strong> Full touch screen support with multi-touch pinch to zoom and touch-drag.</li>
-            <li><strong>Probing:</strong> Click anywhere on the 3D field to measure exact localized scalar/vector values at that coordinate.</li>
+            <li><strong>LEFT PAD (BOX):</strong> Controls the sampling domain box. Drag disk for XY planar translation, drag vertical slider for Z-axis shift. Double-tap to reset box position.</li>
+            <li><strong>RIGHT PAD (CAM):</strong> Controls camera viewpoint. Drag disk to orbit azimuth and elevation, drag vertical slider to zoom/dolly. Double-tap to reset view.</li>
+            <li><strong>PROBING:</strong> Click anywhere on the 3D field to measure exact localized scalar/vector values at that coordinate.</li>
           </ul>
         </section>
 
         <section class="guide-section">
-          <h3>5. Code Editor & Shortcuts</h3>
+          <h3>5. SHORTCUTS</h3>
           <ul class="guide-list">
-            <li><kbd>Ctrl</kbd> + <kbd>Enter</kbd> or <kbd>Cmd</kbd> + <kbd>Enter</kbd>: Immediately evaluate & render field.</li>
+            <li><kbd>Ctrl</kbd> + <kbd>Enter</kbd> / <kbd>Cmd</kbd> + <kbd>Enter</kbd>: Immediately evaluate &amp; render field.</li>
             <li><kbd>Ctrl</kbd> + <kbd>Space</kbd>: Trigger syntax autocompletion popup.</li>
             <li><kbd>Tab</kbd>: Indent 2 spaces / accept completion.</li>
             <li><kbd>Esc</kbd>: Close dropdowns or modal dialogs.</li>

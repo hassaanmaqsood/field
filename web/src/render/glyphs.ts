@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { Field, asNumberArray, asTensor } from '../protocol/Field';
+import { asNumberArray, asTensor, Field } from '../protocol/Field';
+import { quantizeToneRGB } from './tokens';
 
 function sampleGridPoints(bounds: { min: number; max: number }[], countPerAxis: number): number[][] {
   const m = bounds.length;
@@ -21,21 +22,25 @@ function sampleGridPoints(bounds: { min: number; max: number }[], countPerAxis: 
 }
 
 /** Directional glyph field for vector-valued fields (rankOut === [n], n<=3). */
-export function buildVectorGlyphs(field: Field, countPerAxis = 6, spatialAxes: [number, number, number] = [0, 1, 2], fixedRestOfDomain: number[] = []): THREE.InstancedMesh {
+export function buildVectorGlyphs(
+  field: Field,
+  countPerAxis = 6,
+  spatialAxes: [number, number, number] = [0, 1, 2],
+  fixedRestOfDomain: number[] = []
+): THREE.InstancedMesh {
   const fullBounds = field.domain();
   const spatialBounds = spatialAxes.map((a) => fullBounds[a]);
   const points3 = sampleGridPoints(spatialBounds, countPerAxis);
 
-  const geometry = new THREE.ConeGeometry(0.08, 0.32, 8); // wedge/pyramid-like directional glyph
-  geometry.rotateX(Math.PI / 2); // point along +z by default -> we align to +y then rotate to direction
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true });
+  const geometry = new THREE.ConeGeometry(0.08, 0.32, 8);
+  geometry.rotateX(Math.PI / 2);
+  const material = new THREE.MeshBasicMaterial({ vertexColors: true });
   const mesh = new THREE.InstancedMesh(geometry, material, points3.length);
 
   const dummy = new THREE.Object3D();
   const colorAttr = new Float32Array(points3.length * 3);
   let maxMag = 1e-6;
   const vecs: number[][] = [];
-  const positions: number[][] = [];
 
   for (const p3 of points3) {
     const full = fullBounds.map((_, i) => {
@@ -48,7 +53,6 @@ export function buildVectorGlyphs(field: Field, countPerAxis = 6, spatialAxes: [
     const mag = Math.hypot(v[0], v[1], v[2]);
     maxMag = Math.max(maxMag, mag);
     vecs.push(v);
-    positions.push(p3);
   }
 
   points3.forEach((p3, i) => {
@@ -63,10 +67,10 @@ export function buildVectorGlyphs(field: Field, countPerAxis = 6, spatialAxes: [
     mesh.setMatrixAt(i, dummy.matrix);
 
     const t = Math.min(mag / maxMag, 1);
-    const color = new THREE.Color().setHSL(0.55 - 0.55 * t, 0.8, 0.55);
-    colorAttr[i * 3] = color.r;
-    colorAttr[i * 3 + 1] = color.g;
-    colorAttr[i * 3 + 2] = color.b;
+    const [r, g, b] = quantizeToneRGB(t);
+    colorAttr[i * 3] = r / 255;
+    colorAttr[i * 3 + 1] = g / 255;
+    colorAttr[i * 3 + 2] = b / 255;
   });
 
   mesh.geometry.setAttribute('color', new THREE.InstancedBufferAttribute(colorAttr, 3));
@@ -75,7 +79,7 @@ export function buildVectorGlyphs(field: Field, countPerAxis = 6, spatialAxes: [
 }
 
 /** Symmetric 3x3 eigendecomposition via cyclic Jacobi rotation. */
-function jacobiEigen(mIn: number[][]): { values: number[]; vectors: THREE.Matrix3 } {
+export function jacobiEigen3(mIn: number[][]): { values: number[]; vectors: THREE.Matrix3 } {
   const a = [mIn[0].slice(), mIn[1].slice(), mIn[2].slice()];
   const v = [
     [1, 0, 0],
@@ -98,12 +102,15 @@ function jacobiEigen(mIn: number[][]): { values: number[]; vectors: THREE.Matrix
       const app = a[p][p], aqq = a[q][q], apq = a[p][q];
       a[p][p] = c * c * app - 2 * s * c * apq + s * s * aqq;
       a[q][q] = s * s * app + 2 * s * c * apq + c * c * aqq;
-      a[p][q] = a[q][p] = 0;
+      a[p][q] = 0;
+      a[q][p] = 0;
       for (let k = 0; k < 3; k++) {
         if (k !== p && k !== q) {
           const akp = a[k][p], akq = a[k][q];
-          a[k][p] = a[p][k] = c * akp - s * akq;
-          a[k][q] = a[q][k] = s * akp + c * akq;
+          a[k][p] = c * akp - s * akq;
+          a[p][k] = a[k][p];
+          a[k][q] = s * akp + c * akq;
+          a[q][k] = a[k][q];
         }
         const vkp = v[k][p], vkq = v[k][q];
         v[k][p] = c * vkp - s * vkq;
@@ -118,13 +125,18 @@ function jacobiEigen(mIn: number[][]): { values: number[]; vectors: THREE.Matrix
 }
 
 /** Principal-axis ellipsoid glyph field for rank-2 (3x3) tensor fields. */
-export function buildTensorGlyphs(field: Field, countPerAxis = 6, spatialAxes: [number, number, number] = [0, 1, 2], fixedRestOfDomain: number[] = []): THREE.InstancedMesh {
+export function buildTensorGlyphs(
+  field: Field,
+  countPerAxis = 6,
+  spatialAxes: [number, number, number] = [0, 1, 2],
+  fixedRestOfDomain: number[] = []
+): THREE.InstancedMesh {
   const fullBounds = field.domain();
   const spatialBounds = spatialAxes.map((a) => fullBounds[a]);
   const points3 = sampleGridPoints(spatialBounds, countPerAxis);
 
   const geometry = new THREE.SphereGeometry(0.14, 12, 8);
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true });
+  const material = new THREE.MeshBasicMaterial({ vertexColors: true });
   const mesh = new THREE.InstancedMesh(geometry, material, points3.length);
 
   const dummy = new THREE.Object3D();
@@ -139,7 +151,7 @@ export function buildTensorGlyphs(field: Field, countPerAxis = 6, spatialAxes: [
       return fixedRestOfDomain[i] ?? 0;
     });
     const t = asTensor(field.at(full));
-    const eig = jacobiEigen(t);
+    const eig = jacobiEigen3(t);
     maxAbsEig = Math.max(maxAbsEig, ...eig.values.map(Math.abs));
     eigenCache.push(eig);
   }
@@ -159,10 +171,10 @@ export function buildTensorGlyphs(field: Field, countPerAxis = 6, spatialAxes: [
 
     const meanAbs = (Math.abs(values[0]) + Math.abs(values[1]) + Math.abs(values[2])) / 3;
     const t = Math.min(meanAbs / maxAbsEig, 1);
-    const color = new THREE.Color().setHSL(0.02 + 0.1 * (1 - t), 0.75, 0.5);
-    colorAttr[i * 3] = color.r;
-    colorAttr[i * 3 + 1] = color.g;
-    colorAttr[i * 3 + 2] = color.b;
+    const [r, g, b] = quantizeToneRGB(t);
+    colorAttr[i * 3] = r / 255;
+    colorAttr[i * 3 + 1] = g / 255;
+    colorAttr[i * 3 + 2] = b / 255;
   });
 
   mesh.geometry.setAttribute('color', new THREE.InstancedBufferAttribute(colorAttr, 3));

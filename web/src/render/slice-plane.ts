@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Field, asScalar } from '../protocol/Field';
 import { Bounds } from '../protocol/Field';
+import { quantizeToneRGB } from './tokens';
 
 // ── Colormaps ──────────────────────────────────────────────────────────────
 
@@ -122,20 +123,20 @@ export function buildSlicePlane(
   const maxV = Math.max(...vals);
   const range = maxV - minV || 1;
 
-  // Second pass: map to RGBA
+  // Second pass: map to RGBA using discrete ink tokens
   for (let i = 0; i < vals.length; i++) {
     const t = (vals[i] - minV) / range;
-    const [r, g, b] = applyColormap(t, cmapName);
-    data[i * 4 + 0] = Math.round(r * 255);
-    data[i * 4 + 1] = Math.round(g * 255);
-    data[i * 4 + 2] = Math.round(b * 255);
-    data[i * 4 + 3] = 220;
+    const [r, g, b] = quantizeToneRGB(t);
+    data[i * 4 + 0] = r;
+    data[i * 4 + 1] = g;
+    data[i * 4 + 2] = b;
+    data[i * 4 + 3] = 255;
   }
 
   const texture = new THREE.DataTexture(data, resolution, resolution, THREE.RGBAFormat);
   texture.needsUpdate = true;
-  texture.minFilter   = THREE.LinearFilter;
-  texture.magFilter   = THREE.LinearFilter;
+  texture.minFilter   = THREE.NearestFilter;
+  texture.magFilter   = THREE.NearestFilter;
 
   // Geometry: a quad in the two non-slice axes
   const width  = uB.max - uB.min;

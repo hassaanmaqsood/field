@@ -8,6 +8,7 @@ import {
   SerializedField,
   Shape,
 } from '../protocol/Field';
+import { Grid } from './Grid';
 
 export interface GridFieldData {
   domain: Bounds[]; // length m
@@ -26,8 +27,14 @@ export interface GridFieldData {
  * satisfying the identical grad() contract analytic fields use.
  */
 export class GridField extends BaseField {
+  private grid: Grid;
+
   constructor(private data: GridFieldData) {
     super();
+    this.grid = new Grid({
+      domain: data.domain,
+      resolution: data.resolution,
+    });
   }
 
   domain(): Bounds[] {
@@ -54,29 +61,12 @@ export class GridField extends BaseField {
   }
 
   private cellIndexAndFrac(p: Point): { idx0: number[]; frac: number[] } {
-    const m = this.rankIn();
-    const idx0: number[] = new Array(m);
-    const frac: number[] = new Array(m);
-    for (let d = 0; d < m; d++) {
-      const { min, max } = this.data.domain[d];
-      const res = this.data.resolution[d];
-      const t = ((p[d] - min) / (max - min)) * (res - 1);
-      const clamped = Math.min(Math.max(t, 0), res - 1 - 1e-9);
-      idx0[d] = Math.floor(clamped);
-      frac[d] = clamped - idx0[d];
-    }
-    return { idx0, frac };
+    const { idx, frac } = this.grid.fromWorld(p);
+    return { idx0: idx, frac };
   }
 
   private flatIndex(coords: number[]): number {
-    const res = this.data.resolution;
-    let idx = 0;
-    let stride = 1;
-    for (let d = res.length - 1; d >= 0; d--) {
-      idx += coords[d] * stride;
-      stride *= res[d];
-    }
-    return idx * this.data.valueSize;
+    return this.grid.flatIndex(coords) * this.data.valueSize;
   }
 
   /** Multilinear interpolation over the 2^m surrounding grid corners. */

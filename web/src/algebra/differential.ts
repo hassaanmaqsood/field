@@ -95,7 +95,28 @@ export function laplacian(self: Field): Field {
   });
 }
 
+/**
+ * Standalone finite difference gradient computation on arbitrary closures.
+ */
+export function finiteDifferenceGrad(
+  fn: (p: number[]) => number,
+  p: number[],
+  h = 1e-4
+): number[] {
+  const m = p.length;
+  const grad: number[] = new Array(m);
+  for (let i = 0; i < m; i++) {
+    const pPlus = p.slice();
+    const pMinus = p.slice();
+    pPlus[i] += h;
+    pMinus[i] -= h;
+    grad[i] = (fn(pPlus) - fn(pMinus)) / (2 * h);
+  }
+  return grad;
+}
+
 registerOperator('gradient', (self) => gradient(self));
 registerOperator('divergence', (self) => divergence(self));
 registerOperator('curl', (self) => curl(self));
 registerOperator('laplacian', (self) => laplacian(self));
+

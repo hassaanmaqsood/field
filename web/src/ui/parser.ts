@@ -11,7 +11,7 @@ export interface FieldDef {
 
 export type OpKind =
   | 'gradient' | 'divergence' | 'curl' | 'laplacian'
-  | 'combine' | 'bake' | 'slice';
+  | 'combine' | 'bake' | 'slice' | 'rotate2D' | 'mirror' | 'guarded';
 
 export interface OpStep {
   kind: OpKind;
@@ -20,9 +20,16 @@ export interface OpStep {
   res?: number;
   axis?: number;
   value?: number;
+  angle?: number;
+  a0?: number;
+  a1?: number;
 }
 
-export type ViewKind = 'iso' | 'volume' | 'glyphs' | 'streamlines' | 'slice';
+export type ViewKind =
+  | 'iso' | 'volume' | 'glyphs' | 'streamlines' | 'slice'
+  | 'density' | 'bands' | 'isolines'
+  | 'height' | 'terraces' | 'shells'
+  | 'ascii';
 
 export interface ViewLayer {
   kind: ViewKind;
@@ -37,6 +44,16 @@ export interface ViewLayer {
   tube?: number;
   axis?: 'x' | 'y' | 'z';
   value?: number;
+
+  // New fields for discrete containers:
+  res?: number;          // sampling resolution
+  tiers?: number;        // halftone tier count (default 20)
+  cellSize?: number;     // halftone cell spacing
+  heightScale?: number;  // height field / terraces vertical scale
+  shells?: number[];     // isosurface shell levels
+  cols?: number;         // ascii columns
+  rows?: number;         // ascii rows
+  fps?: number;          // ascii target fps
 }
 
 export interface SampleDef {
@@ -113,8 +130,8 @@ function parseInlineKV(inner: string): Record<string, string> {
   return result;
 }
 
-function extractInlineBlocks(text: string): { name: string; kv: Record<string, string>; pos: number }[] {
-  const result: { name: string; kv: Record<string, string>; pos: number }[] = [];
+function extractInlineBlocks(text: string): { name: string; kv: Record<string, string>; pos: number; end: number }[] {
+  const result: { name: string; kv: Record<string, string>; pos: number; end: number }[] = [];
   let i = 0;
   while (i < text.length) {
     const wordMatch = /(\w+)\s*\{/.exec(text.slice(i));
@@ -128,7 +145,7 @@ function extractInlineBlocks(text: string): { name: string; kv: Record<string, s
       else if (text[j] === '}') { depth--; if (depth === 0) { end = j; break; } }
     }
     const inner = text.slice(braceOpen + 1, end);
-    result.push({ name: wordMatch[1], kv: parseInlineKV(inner), pos: start });
+    result.push({ name: wordMatch[1], kv: parseInlineKV(inner), pos: start, end: end + 1 });
     i = end + 1;
   }
   return result;
@@ -147,22 +164,25 @@ function parseFieldBlock(raw: string): FieldDef {
   return { preset: kv['preset'], expr: kv['expr'], domain, rankOut };
 }
 
-const OP_KEYWORDS = ['gradient', 'divergence', 'curl', 'laplacian'] as const;
+const OP_KEYWORDS = ['gradient', 'divergence', 'curl', 'laplacian', 'guarded'] as const;
 
 function parseOpsBlock(raw: string): OpStep[] {
   const steps: OpStep[] = [];
   const blocks = extractInlineBlocks(raw);
   const occupied = new Set<number>();
 
-  for (const { name, kv, pos } of blocks) {
+  for (const { name, kv, pos, end } of blocks) {
     const step: OpStep = { kind: name as OpKind };
     if (kv['with'])   step.with  = kv['with'];
     if (kv['op'])     step.op    = kv['op'];
     if (kv['res'])    step.res   = parseInt(kv['res']);
     if (kv['axis'] !== undefined) step.axis = 'xyzw'.indexOf(kv['axis']);
     if (kv['value'] !== undefined) step.value = parseFloat(kv['value']);
+    if (kv['angle'] !== undefined) step.angle = parseFloat(kv['angle']);
+    if (kv['a0'] !== undefined) step.a0 = parseInt(kv['a0']);
+    if (kv['a1'] !== undefined) step.a1 = parseInt(kv['a1']);
     steps.push(step);
-    for (let i = pos; i < pos + 80; i++) occupied.add(i);
+    for (let i = pos; i < end; i++) occupied.add(i);
   }
 
   const lines = raw.split('\n');
@@ -195,6 +215,20 @@ function parseViewBlock(raw: string): ViewLayer[] {
     if (kv['tube']    !== undefined)  layer.tube    = parseFloat(kv['tube']);
     if (kv['axis'])                   layer.axis    = kv['axis'] as 'x' | 'y' | 'z';
     if (kv['value']   !== undefined)  layer.value   = parseFloat(kv['value']);
+
+    // Discrete token view parameters
+    if (kv['res'])                    layer.res     = parseInt(kv['res']);
+    if (kv['cellSize'])               layer.cellSize= parseInt(kv['cellSize']);
+    if (kv['tiers'])                  layer.tiers   = parseInt(kv['tiers']);
+    if (kv['heightScale'])            layer.heightScale = parseFloat(kv['heightScale']);
+    if (kv['cols'])                   layer.cols    = parseInt(kv['cols']);
+    if (kv['rows'])                   layer.rows    = parseInt(kv['rows']);
+    if (kv['fps'])                    layer.fps     = parseInt(kv['fps']);
+    if (kv['shells']) {
+      const clean = kv['shells'].replace(/[\[\]]/g, '');
+      layer.shells = clean.split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
+    }
+
     layers.push(layer);
   }
   return layers;
@@ -210,7 +244,7 @@ function parseSampleBlock(raw: string): SampleDef {
 // ── Public API ─────────────────────────────────────────────────────────────
 
 export const DEFAULT_CODE = `field {
-  expr:   sqrt(x*x + y*y + z*z) - 1.5
+  expr:   sqrt(x*x + y*y + z*z) - 1.8
   domain: x[-4:4] y[-4:4] z[-4:4]
 }
 
@@ -218,15 +252,13 @@ ops {
 }
 
 view {
-  iso { level: 0.0   color: #2563eb   opacity: 0.88 }
+  shells { shells: [-0.4, 0.0, 0.4] }
 }
 
 sample {
   box: x[-4:4] y[-4:4] z[-4:4]
   res: 48
 }`;
-
-
 
 export function parseConfig(source: string): ParsedConfig {
   const clean = stripComments(source);

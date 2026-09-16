@@ -1,14 +1,10 @@
 /**
- * JogPad — a touch/mouse-friendly joystick controller.
- *
- * Each pad has:
- *   - A circular disk (XY control): reports normalised dx/dy in [-1, 1]
- *   - A vertical strip (Z/zoom):    reports normalised dz in [-1, 1]
- *   - A centre-tap callback
- *
- * Physics: thumbstick springs back to centre on release with configurable damping.
- * Velocity is emitted continuously via requestAnimationFrame while the pad is held
- * OR while the spring is still decaying.
+ * JogPad — touch & pointer controller.
+ * Flat monochrome architecture matching strict design tokens:
+ *   - 1px --ink-20 (#BCBAB4) stroke circular ring, transparent fill
+ *   - Small flat --ink (#0D0D0E) dot marking current orientation (no gradient/shadow)
+ *   - Thin --ink-10 (#D8D6CE) linear track with --ink-80 (#2E2E32) fill
+ *   - Both BOX and CAM controls use identical monochrome styling.
  */
 
 export interface JogPadCallbacks {
@@ -41,20 +37,16 @@ export class JogPad {
 
   private rafId = 0;
   private callbacks: JogPadCallbacks = {};
-  private accent: string;
-  private label: string;
 
   constructor(
     diskCanvas: HTMLCanvasElement,
     stripCanvas: HTMLCanvasElement,
-    accent: string,
-    label: string,
+    _accent: string,
+    _label: string,
     callbacks: JogPadCallbacks = {},
   ) {
     this.diskCanvas  = diskCanvas;
     this.stripCanvas = stripCanvas;
-    this.accent      = accent;
-    this.label       = label;
     this.callbacks   = callbacks;
     this.dctx = diskCanvas.getContext('2d')!;
     this.sctx = stripCanvas.getContext('2d')!;
@@ -98,103 +90,99 @@ export class JogPad {
     // Touch pinch (two-finger) on disk — treat as Z
     this.diskCanvas.addEventListener('touchstart', this.onTouchPinchStart, { passive: false });
     this.diskCanvas.addEventListener('touchmove',  this.onTouchPinchMove,  { passive: false });
-    this.diskCanvas.addEventListener('touchend',   this.onTouchPinchEnd,   { passive: false });
   }
 
-  // ── Disk pointer events ────────────────────────────────────────────────
-
-  private diskCenter = () => {
-    const r = this.diskCanvas.getBoundingClientRect();
-    return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, radius: r.width / 2 - 6 };
-  };
+  // ── Pointer handlers: Disk ─────────────────────────────────────────────
 
   private onDiskDown = (e: PointerEvent) => {
-    this.diskDragging = true;
+    e.preventDefault();
     this.diskCanvas.setPointerCapture(e.pointerId);
+    this.diskDragging = true;
+    this.updateDiskXY(e);
   };
 
   private onDiskMove = (e: PointerEvent) => {
     if (!this.diskDragging) return;
-    const { cx, cy, radius } = this.diskCenter();
-    const dx = (e.clientX - cx) / radius;
-    const dy = (e.clientY - cy) / radius;
-    const mag = Math.hypot(dx, dy);
-    const clamped = mag > 1 ? 1 / mag : 1;
-    this.tx = dx * clamped;
-    this.ty = dy * clamped;
+    this.updateDiskXY(e);
   };
 
   private onDiskUp = (_e: PointerEvent) => {
     if (!this.diskDragging) return;
     this.diskDragging = false;
-    // Hand-off velocity to inertia
+    // Release with velocity equal to current deflection (smooth decay)
     this.vx = this.tx;
     this.vy = this.ty;
     this.tx = 0;
     this.ty = 0;
   };
 
-  // ── Strip pointer events ───────────────────────────────────────────────
+  private updateDiskXY(e: PointerEvent) {
+    const rect = this.diskCanvas.getBoundingClientRect();
+    const cx   = rect.width  / 2;
+    const cy   = rect.height / 2;
+    const px   = e.clientX - rect.left - cx;
+    const py   = e.clientY - rect.top  - cy;
+    const maxR = Math.min(cx, cy) - 6;
+
+    const dist = Math.hypot(px, py);
+    const clampedDist = Math.min(dist, maxR);
+    const angle = Math.atan2(py, px);
+
+    this.tx = (Math.cos(angle) * clampedDist) / maxR;
+    this.ty = (Math.sin(angle) * clampedDist) / maxR;
+  }
+
+  // ── Pointer handlers: Strip ────────────────────────────────────────────
 
   private onStripDown = (e: PointerEvent) => {
+    e.preventDefault();
+    this.stripCanvas.setPointerCapture(e.pointerId);
     this.stripDragging = true;
     this.stripDragY0 = e.clientY;
     this.stripDragZ0 = this.tz;
-    this.stripCanvas.setPointerCapture(e.pointerId);
   };
 
   private onStripMove = (e: PointerEvent) => {
     if (!this.stripDragging) return;
-    const r = this.stripCanvas.getBoundingClientRect();
-    const delta = (e.clientY - this.stripDragY0) / r.height;
-    this.tz = Math.max(-1, Math.min(1, this.stripDragZ0 + delta * 2));
+    const dy = (e.clientY - this.stripDragY0) / (this.stripCanvas.height / 2);
+    this.tz  = Math.max(-1, Math.min(1, this.stripDragZ0 - dy));
   };
 
-  private onStripUp = () => {
+  private onStripUp = (_e: PointerEvent) => {
     if (!this.stripDragging) return;
     this.stripDragging = false;
     this.vz = this.tz;
     this.tz = 0;
   };
 
-  // ── Touch pinch (two-finger) → Z ──────────────────────────────────────
+  // ── Touch pinch (two-finger zoom) ──────────────────────────────────────
 
   private pinchDist0 = 0;
-  private pinchZ0    = 0;
 
   private onTouchPinchStart = (e: TouchEvent) => {
     if (e.touches.length === 2) {
       e.preventDefault();
-      const t = e.touches;
-      this.pinchDist0 = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-      this.pinchZ0 = this.tz;
+      const [t1, t2] = [e.touches[0], e.touches[1]];
+      this.pinchDist0 = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
     }
   };
 
   private onTouchPinchMove = (e: TouchEvent) => {
-    if (e.touches.length === 2 && this.pinchDist0 > 0) {
+    if (e.touches.length === 2) {
       e.preventDefault();
-      const t = e.touches;
-      const dist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-      const ratio = dist / this.pinchDist0;
-      this.tz = Math.max(-1, Math.min(1, this.pinchZ0 + (ratio - 1) * 2));
+      const [t1, t2] = [e.touches[0], e.touches[1]];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const delta = (dist - this.pinchDist0) / 100;
+      this.callbacks.onZ?.(Math.max(-1, Math.min(1, delta)));
+      this.pinchDist0 = dist;
     }
   };
 
-  private onTouchPinchEnd = (e: TouchEvent) => {
-    if (e.touches.length < 2) {
-      this.vz = this.tz * 0.5;
-      this.tz = 0;
-      this.pinchDist0 = 0;
-    }
-  };
-
-  // ── Animation loop ─────────────────────────────────────────────────────
+  // ── Animation / Physics loop ───────────────────────────────────────────
 
   private loop = () => {
     this.rafId = requestAnimationFrame(this.loop);
 
-    // Active stick values (dragging) + inertia values (released)
     const x = this.diskDragging  ? this.tx : this.vx;
     const y = this.diskDragging  ? this.ty : this.vy;
     const z = this.stripDragging ? this.tz : this.vz;
@@ -224,46 +212,32 @@ export class JogPad {
     const cx = w / 2;
     const cy = h / 2;
     const outerR = Math.min(cx, cy) - 2;
-    const thumbR = 14;
 
     c.clearRect(0, 0, w, h);
 
-    // Outer ring
+    // 1. Flat circular ring: 1px --ink-20 (#BCBAB4) stroke, transparent fill
     c.beginPath();
     c.arc(cx, cy, outerR, 0, Math.PI * 2);
-    c.fillStyle   = 'rgba(250,248,244,0.82)';
-    c.fill();
-    c.strokeStyle = 'rgba(180,168,148,0.6)';
+    c.strokeStyle = '#BCBAB4';
     c.lineWidth   = 1;
     c.stroke();
 
-    // Cross-hair guides
-    c.strokeStyle = 'rgba(180,168,148,0.3)';
+    // 2. Subtle cross-hair guide (thin --ink-10 #D8D6CE)
+    c.strokeStyle = '#D8D6CE';
     c.lineWidth   = 0.5;
     c.beginPath(); c.moveTo(cx, cy - outerR + 4); c.lineTo(cx, cy + outerR - 4); c.stroke();
     c.beginPath(); c.moveTo(cx - outerR + 4, cy); c.lineTo(cx + outerR - 4, cy); c.stroke();
 
-    // Thumb dot
-    const tx = cx + x * (outerR - thumbR - 2);
-    const ty = cy + y * (outerR - thumbR - 2);
-
-    const grad = c.createRadialGradient(tx - 3, ty - 3, 1, tx, ty, thumbR);
-    grad.addColorStop(0, 'rgba(255,255,255,0.9)');
-    grad.addColorStop(1, this.accent + 'cc');
+    // 3. Small flat --ink (#0D0D0E) dot marking current orientation (no highlight, no shadow)
+    const dotR = 5;
+    const maxTravel = outerR - dotR - 3;
+    const tx = cx + x * maxTravel;
+    const ty = cy + y * maxTravel;
 
     c.beginPath();
-    c.arc(tx, ty, thumbR, 0, Math.PI * 2);
-    c.fillStyle = grad;
+    c.arc(tx, ty, dotR, 0, Math.PI * 2);
+    c.fillStyle = '#0D0D0E';
     c.fill();
-    c.strokeStyle = this.accent;
-    c.lineWidth   = 1.5;
-    c.stroke();
-
-    // Label
-    c.fillStyle   = 'rgba(130,120,110,0.7)';
-    c.font        = `500 8px "Inter", sans-serif`;
-    c.textAlign   = 'center';
-    c.fillText(this.label, cx, h - 4);
   }
 
   private drawStrip(z: number) {
@@ -274,25 +248,17 @@ export class JogPad {
 
     c.clearRect(0, 0, w, h);
 
-    // Track
-    c.beginPath();
-    c.roundRect(cx - 3, 4, 6, h - 8, 3);
-    c.fillStyle   = 'rgba(230,225,215,0.82)';
-    c.fill();
-    c.strokeStyle = 'rgba(180,168,148,0.5)';
-    c.lineWidth   = 1;
-    c.stroke();
+    // 1. Thin --ink-10 (#D8D6CE) rectangular track (no border radius)
+    const trackW = 4;
+    c.fillStyle = '#D8D6CE';
+    c.fillRect(cx - trackW / 2, 4, trackW, h - 8);
 
-    // Thumb
+    // 2. --ink-80 (#2E2E32) rectangular slider thumb (no border radius)
     const ty  = 4 + (h - 8) * (1 - (z + 1) / 2);
-    const seg = h * 0.25;
+    const segH = Math.max(10, h * 0.22);
+    const thumbW = 8;
 
-    c.beginPath();
-    c.roundRect(cx - 4, ty - seg / 2, 8, seg, 3);
-    c.fillStyle = this.accent + 'bb';
-    c.fill();
-    c.strokeStyle = this.accent;
-    c.lineWidth   = 1;
-    c.stroke();
+    c.fillStyle = '#2E2E32';
+    c.fillRect(cx - thumbW / 2, ty - segH / 2, thumbW, segH);
   }
 }

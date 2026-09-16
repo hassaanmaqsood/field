@@ -25,17 +25,17 @@ import {
   closeBracketsKeymap,
 } from '@codemirror/autocomplete';
 
-// ── Custom Academic Highlight Style ──────────────────────────────────────────
+// ── Custom Ink-Scale Highlight Style ──────────────────────────────────────────
 const academicHighlightStyle = HighlightStyle.define([
-  { tag: t.keyword, color: '#854D0E', fontWeight: '600' },          // amber-800 for block headers (field, ops, view, sample)
-  { tag: t.definitionKeyword, color: '#1D4ED8', fontWeight: '600' },// blue-700
-  { tag: t.propertyName, color: '#0F766E', fontWeight: '500' },     // teal-700 for property keys
-  { tag: t.string, color: '#15803D' },                              // green-700
-  { tag: t.number, color: '#B45309' },                              // amber-700
-  { tag: t.operator, color: '#4B5563' },                            // gray-600
-  { tag: t.comment, color: '#9CA3AF', fontStyle: 'italic' },        // gray-400
-  { tag: t.bracket, color: '#374151' },                             // gray-700
-  { tag: t.standard(t.variableName), color: '#6D28D9' },            // purple-700 for presets & ops
+  { tag: t.keyword, color: '#0D0D0E', fontWeight: '500' },          // keywords in --ink at 500 weight
+  { tag: t.definitionKeyword, color: '#0D0D0E', fontWeight: '500' },
+  { tag: t.propertyName, color: '#2E2E32', fontWeight: '500' },
+  { tag: t.string, color: '#5A5A5E' },                              // literals/numbers in --ink-60
+  { tag: t.number, color: '#5A5A5E' },
+  { tag: t.operator, color: '#0D0D0E' },
+  { tag: t.comment, color: '#8A8A8E', fontStyle: 'italic' },        // comments in --ink-40
+  { tag: t.bracket, color: '#0D0D0E' },
+  { tag: t.standard(t.variableName), color: '#0D0D0E', fontWeight: '500' },
 ]);
 
 // ── Field Syntax Stream Lexer ────────────────────────────────────────────────
@@ -43,9 +43,9 @@ const TOP_BLOCKS = new Set(['field', 'ops', 'view', 'sample']);
 const KEYWORDS = new Set([
   'preset', 'expr', 'domain', 'rankOut',
   'gradient', 'divergence', 'curl', 'laplacian',
-  'combine', 'bake', 'slice', 'fit',
-  'iso', 'glyphs', 'streamlines', 'volume',
-  'with', 'op', 'res', 'axis', 'value',
+  'combine', 'bake', 'slice', 'fit', 'rotate2D', 'mirror', 'guarded',
+  'iso', 'glyphs', 'streamlines', 'volume', 'density', 'bands', 'isolines', 'height', 'terraces', 'shells', 'ascii',
+  'with', 'op', 'res', 'axis', 'value', 'angle', 'a0', 'a1', 'tiers', 'cellSize', 'heightScale', 'cols', 'rows', 'fps',
   'level', 'color', 'opacity', 'count', 'scale', 'cmap', 'seeds', 'steps', 'tube', 'box',
 ]);
 const PRESETS = new Set([
@@ -260,14 +260,14 @@ function fieldCompletions(context: CompletionContext): CompletionResult | null {
   };
 }
 
-// ── Academic CodeMirror Theme ────────────────────────────────────────────────
+// ── Academic CodeMirror Theme (Strict Monochrome Ink Scale) ─────────────────
 const academicTheme = EditorView.theme({
   '&': {
     height: '100%',
-    fontFamily: "var(--f-mono, 'JetBrains Mono', 'Fira Code', monospace)",
+    fontFamily: "var(--f-mono, 'IBM Plex Mono', monospace)",
     fontSize: '12px',
-    backgroundColor: '#FFFFFF',
-    color: '#1A1714',
+    backgroundColor: 'var(--surface, #EDECEA)',
+    color: 'var(--ink, #0D0D0E)',
   },
   '.cm-scroller': {
     overflow: 'auto',
@@ -276,75 +276,75 @@ const academicTheme = EditorView.theme({
     padding: '4px 0',
   },
   '.cm-content': {
-    caretColor: '#1D4ED8',
+    caretColor: 'var(--ink, #0D0D0E)',
     padding: '4px 10px',
   },
   '&.cm-focused .cm-cursor': {
-    borderLeftColor: '#1D4ED8',
+    borderLeftColor: 'var(--ink, #0D0D0E)',
     borderLeftWidth: '2px',
   },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-    backgroundColor: 'rgba(29, 78, 216, 0.15) !important',
+    backgroundColor: 'var(--ink-10, #D8D6CE) !important',
   },
   '.cm-gutters': {
-    backgroundColor: '#F8F6F2',
-    color: '#9E9489',
-    borderRight: '1px solid #E5E0D6',
+    backgroundColor: 'var(--surface, #EDECEA)',
+    color: 'var(--ink-20, #BCBAB4)',
+    borderRight: '1px solid var(--ink-10, #D8D6CE)',
     paddingRight: '6px',
-    fontFamily: "var(--f-mono, monospace)",
+    fontFamily: "var(--f-mono, 'IBM Plex Mono', monospace)",
     fontSize: '10.5px',
   },
   '.cm-activeLineGutter': {
-    backgroundColor: '#ECE7DD',
-    color: '#1A1714',
-    fontWeight: '600',
+    backgroundColor: 'var(--ink-10, #D8D6CE)',
+    color: 'var(--ink, #0D0D0E)',
+    fontWeight: '500',
   },
   '.cm-activeLine': {
-    backgroundColor: 'rgba(29, 78, 216, 0.035)',
+    backgroundColor: 'rgba(13, 13, 14, 0.03)',
   },
-  // Autocomplete popup styling
+  // Autocomplete popup styling - strict zero radius, zero shadow
   '.cm-tooltip-autocomplete': {
-    border: '1px solid #D0C9BC',
-    backgroundColor: '#FFFFFF',
-    borderRadius: '6px',
-    boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
-    fontFamily: "var(--f-ui, 'Inter', sans-serif)",
-    fontSize: '11.5px',
+    border: '1px solid var(--ink, #0D0D0E)',
+    backgroundColor: 'var(--surface, #EDECEA)',
+    borderRadius: '0',
+    boxShadow: 'none',
+    fontFamily: "var(--f-mono, 'IBM Plex Mono', monospace)",
+    fontSize: '11px',
     overflow: 'hidden',
     zIndex: '200',
   },
   '.cm-tooltip-autocomplete ul': {
-    padding: '4px',
+    padding: '2px 0',
     maxHeight: '220px',
   },
   '.cm-tooltip-autocomplete ul li': {
     padding: '4px 8px',
-    borderRadius: '4px',
+    borderRadius: '0',
     lineHeight: '1.4',
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
   },
   '.cm-tooltip-autocomplete ul li[aria-selected]': {
-    backgroundColor: '#1D4ED8',
-    color: '#FFFFFF',
+    backgroundColor: 'var(--ink, #0D0D0E)',
+    color: 'var(--ground, #F5F4F0)',
   },
   '.cm-completionDetail': {
     fontStyle: 'normal',
-    color: '#6B6259',
-    fontSize: '10.5px',
+    color: 'var(--ink-40, #8A8A8E)',
+    fontSize: '10px',
   },
   '.cm-tooltip-autocomplete ul li[aria-selected] .cm-completionDetail': {
-    color: 'rgba(255,255,255,0.85)',
+    color: 'var(--ink-20, #BCBAB4)',
   },
   '.cm-completionLabel': {
-    fontFamily: "var(--f-mono, monospace)",
+    fontFamily: "var(--f-mono, 'IBM Plex Mono', monospace)",
     fontWeight: '500',
   },
   '.cm-matchingBracket, .cm-nonmatchingBracket': {
-    backgroundColor: 'rgba(29, 78, 216, 0.2)',
-    outline: '1px solid #1D4ED8',
-    borderRadius: '2px',
+    backgroundColor: 'var(--ink-10, #D8D6CE)',
+    outline: '1px solid var(--ink, #0D0D0E)',
+    borderRadius: '0',
   },
 });
 

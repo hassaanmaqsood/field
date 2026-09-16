@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Field, asNumberArray } from '../protocol/Field';
 import { Bounds } from '../protocol/Field';
-import { applyColormap } from './slice-plane';
+import { quantizeToneRGB } from './tokens';
 
 // ── RK4 integration ────────────────────────────────────────────────────────
 
@@ -106,10 +106,10 @@ export function buildStreamlines(
       const { pos: p0, speed: s0 } = line[i];
       const { pos: p1, speed: s1 } = line[i + 1];
       const t = ((s0 + s1) / 2) / maxSpeed;
-      const [r, g, b] = applyColormap(t, cmapName);
+      const [r, g, b] = quantizeToneRGB(t);
 
       posArr.push(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2]);
-      colArr.push(r, g, b, r, g, b);
+      colArr.push(r / 255, g / 255, b / 255, r / 255, g / 255, b / 255);
     }
   }
 
